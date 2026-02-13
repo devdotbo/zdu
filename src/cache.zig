@@ -6,6 +6,7 @@ const Allocator = std.mem.Allocator;
 
 const CACHE_MAGIC = [4]u8{ 'Z', 'G', 'D', 'U' };
 const CACHE_VERSION = 1;
+const GCNT_MAGIC = [4]u8{ 'G', 'C', 'N', 'T' };
 
 const CachedEntry = struct {
     path: []const u8,
@@ -24,6 +25,7 @@ const CachedTreeNode = struct {
 const EvictionCandidate = struct {
     path: []const u8,
     size_bytes: u64,
+    mtime: i64,
 };
 
 pub fn readCache(
@@ -85,8 +87,6 @@ pub fn readCache(
     const root_entry = try rebuildTree(allocator, records.items);
     const volume_info = platform.getVolumeInfo(canonical_path) catch return null;
 
-    _ = allocator;
-
     return .{
         .path = canonical_path,
         .timestamp = header.timestamp,
@@ -121,6 +121,87 @@ pub fn writeCache(
     try af.finish();
 
     try evictIfNeeded(allocator, config);
+}
+
+pub fn writeGencounts(
+    allocator: Allocator,
+    path_hash: []const u8,
+    records: []const types.GencountRecord,
+    config: types.Config,
+) !void {
+    if (records.len == 0) return;
+
+    const gencount_path = try gencountFilePath(allocator, config.cache_dir, path_hash);
+    defer allocator.free(gencount_path);
+
+    var af = try std.fs.cwd().atomicFile(gencount_path, .{ .mode = 0o600 });
+    errdefer af.deinit();
+
+    var writer = af.file.writer();
+    try writer.writeAll(&GCNT_MAGIC);
+    try writer.writeInt(u32, @intCast(records.len), .little);
+
+    for (records) |record| {
+        const p_len: u16 = @intCast(record.path.len);
+        try writer.writeInt(u16, p_len, .little);
+        if (p_len > 0) {
+            try writer.writeAll(record.path);
+        }
+        try writer.writeInt(u64, record.value, .little);
+    }
+
+    try af.finish();
+}
+
+pub fn readGencounts(
+    allocator: Allocator,
+    path_hash: []const u8,
+    config: types.Config,
+) !?[]types.GencountRecord {
+    const gencount_path = try gencountFilePath(allocator, config.cache_dir, path_hash);
+    defer allocator.free(gencount_path);
+
+    const file = std.fs.cwd().openFile(gencount_path, .{}) catch return null;
+    defer file.close();
+
+    const file_size = try file.getEndPos();
+    if (file_size < 8) return null;
+
+    const bytes = try allocator.alloc(u8, file_size);
+    defer allocator.free(bytes);
+
+    const read = try file.readAll(bytes);
+    if (read != file_size) return null;
+
+    var cursor: usize = 0;
+    if (cursor + 8 > bytes.len) return null;
+    if (!std.mem.eql(u8, bytes[0..4], &GCNT_MAGIC)) return null;
+    cursor += 4;
+
+    const count = std.mem.readInt(u32, bytes[cursor .. cursor + 4], .little);
+    cursor += 4;
+
+    var records = try std.ArrayList(types.GencountRecord).initCapacity(allocator, count);
+    defer records.deinit();
+
+    var i: u32 = 0;
+    while (i < count) : (i += 1) {
+        if (cursor + 2 > bytes.len) return null;
+        const path_len = std.mem.readInt(u16, bytes[cursor .. cursor + 2], .little);
+        cursor += 2;
+        if (cursor + path_len > bytes.len) return null;
+        const path = try allocator.dupe(u8, bytes[cursor .. cursor + path_len]);
+        cursor += path_len;
+
+        if (cursor + 8 > bytes.len) return null;
+        const value = std.mem.readInt(u64, bytes[cursor .. cursor + 8], .little);
+        cursor += 8;
+
+        try records.append(.{ .path = path, .value = value });
+    }
+
+    if (cursor != bytes.len) return null;
+    return records.toOwnedSlice();
 }
 
 fn writeDirectory(writer: anytype, node: *const types.DirectoryEntry) !void {
@@ -213,10 +294,7 @@ fn readHeader(bytes: []const u8, cursor: *usize, file_size: usize, out: *types.C
     return true;
 }
 
-fn rebuildTree(
-    allocator: Allocator,
-    entries: []const CachedEntry,
-) !*types.DirectoryEntry {
+fn rebuildTree(allocator: Allocator, entries: []const CachedEntry) !*types.DirectoryEntry {
     var nodes = try allocator.alloc(CachedTreeNode, entries.len);
 
     for (entries, 0..) |entry, idx| {
@@ -271,8 +349,65 @@ fn rebuildTree(
     return nodes[0].node;
 }
 
-fn cacheFilePath(allocator: Allocator, cache_dir: []const u8, path_hash: []const u8) ![]const u8 {
+pub fn cacheFilePath(allocator: Allocator, cache_dir: []const u8, path_hash: []const u8) ![]const u8 {
     return try std.fmt.allocPrint(allocator, "{s}/{s}.zgdu", .{ cache_dir, path_hash });
+}
+
+pub fn gencountFilePath(allocator: Allocator, cache_dir: []const u8, path_hash: []const u8) ![]const u8 {
+    return try std.fmt.allocPrint(allocator, "{s}/{s}.gencount", .{ cache_dir, path_hash });
+}
+
+pub fn pidFilePath(allocator: Allocator, cache_dir: []const u8, path_hash: []const u8) ![]const u8 {
+    return try std.fmt.allocPrint(allocator, "{s}/{s}.pid", .{ cache_dir, path_hash });
+}
+
+pub fn sockFilePath(allocator: Allocator, cache_dir: []const u8, path_hash: []const u8) ![]const u8 {
+    return try std.fmt.allocPrint(allocator, "{s}/{s}.sock", .{ cache_dir, path_hash });
+}
+
+pub fn logFilePath(
+    allocator: Allocator,
+    log_dir: []const u8,
+    path_hash: []const u8,
+    timestamp: i64,
+) ![]const u8 {
+    const ts = try formatLogTimestamp(allocator, timestamp);
+    defer allocator.free(ts);
+    return try std.fmt.allocPrint(allocator, "{s}/{s}-{s}.log", .{ log_dir, path_hash, ts });
+}
+
+fn formatLogTimestamp(allocator: Allocator, timestamp: i64) ![]const u8 {
+    var secs = timestamp;
+    if (secs < 0) secs = 0;
+    const days = @divFloor(secs, 86_400);
+    const remainder = @mod(secs, 86_400);
+    const date = formatDateFromDays(days);
+    const hour = remainder / 3600;
+    const minute = (remainder % 3600) / 60;
+    const second = remainder % 60;
+    return try std.fmt.allocPrint(allocator, "{d:0>4}{d:0>2}{d:0>2}-{d:0>2}{d:0>2}{d:0>2}", .{
+        date.year,
+        date.month,
+        date.day,
+        hour,
+        minute,
+        second,
+    });
+}
+
+fn formatDateFromDays(days: i64) struct { year: i64, month: i64, day: i64 } {
+    const z = days + 719468;
+    const era = if (z >= 0) z / 146097 else (z - 146096) / 146097;
+    const doe = z - era * 146097;
+    const yoe = (doe - @divFloor(doe, 1460) + @divFloor(doe, 36524) - @divFloor(doe, 146096)) / 365;
+    const y = yoe + era * 400;
+    const doy = doe - (365 * yoe + @divFloor(yoe, 4) - @divFloor(yoe, 100));
+    const mp = (5 * doy + 2) / 153;
+    const d = doy - (153 * mp + 2) / 5 + 1;
+    const m = mp + 3;
+    const month = if (m <= 12) m else m - 12;
+    const year = y + (if (m > 12) 1 else 0) + 1970;
+    return .{ .year = year, .month = month, .day = d };
 }
 
 fn safeCastUsize(value: u64) !usize {
@@ -280,7 +415,6 @@ fn safeCastUsize(value: u64) !usize {
 }
 
 pub fn evictIfNeeded(allocator: Allocator, config: types.Config) !void {
-    _ = allocator;
     var dir = std.fs.cwd().openDir(config.cache_dir, .{ .iterate = true }) catch return;
     defer dir.close();
 
@@ -294,18 +428,22 @@ pub fn evictIfNeeded(allocator: Allocator, config: types.Config) !void {
     var total: u64 = 0;
     while (try it.next()) |entry| {
         if (entry.kind != .file) continue;
-    if (!std.mem.endsWith(u8, entry.name, ".zgdu")) continue;
+        if (!std.mem.endsWith(u8, entry.name, ".zgdu")) continue;
 
-    const name = try std.fs.path.join(std.heap.page_allocator, &.{ config.cache_dir, entry.name });
-    defer std.heap.page_allocator.free(name);
+        const name = try std.fs.path.join(std.heap.page_allocator, &.{ config.cache_dir, entry.name });
+        defer std.heap.page_allocator.free(name);
 
-    const stat = dir.statFile(entry.name) catch continue;
-    const size_u64 = @as(u64, @intCast(stat.size));
-    total += size_u64;
-    try candidates.append(.{
-        .path = try allocator.dupe(u8, name),
-        .size_bytes = size_u64,
-    });
+        const stat = dir.statFile(entry.name) catch continue;
+        const size_u64 = @as(u64, @intCast(stat.size));
+        const size_and_mtime = try parseMTime(entry, dir);
+        const mtime = if (size_and_mtime) |m| m else 0;
+
+        try candidates.append(.{
+            .path = try allocator.dupe(u8, name),
+            .size_bytes = size_u64,
+            .mtime = mtime,
+        });
+        total += size_u64;
     }
 
     if (total <= max_bytes) {
@@ -315,28 +453,45 @@ pub fn evictIfNeeded(allocator: Allocator, config: types.Config) !void {
 
     std.mem.sort(EvictionCandidate, candidates.items, {}, struct {
         fn lessThan(_: void, a: EvictionCandidate, b: EvictionCandidate) bool {
-            return std.mem.lessThan(u8, a.path, b.path);
+            return a.mtime < b.mtime;
         }
     }.lessThan);
 
     var current_total = total;
     for (candidates.items) |entry| {
-        if (current_total <= max_bytes) break;
+        if (current_total <= max_bytes) {
+            allocator.free(entry.path);
+            continue;
+        }
 
         std.fs.cwd().deleteFile(entry.path) catch {};
         const base = std.fs.path.basename(entry.path);
         const stem = std.fs.path.stem(base);
-        var buf: [512]u8 = undefined;
-        const gencount = try std.fmt.bufPrint(&buf, "{s}/{s}.gencount", .{ config.cache_dir, stem });
-        const pid_file = try std.fmt.bufPrint(&buf, "{s}/{s}.pid", .{ config.cache_dir, stem });
-        const sock_file = try std.fmt.bufPrint(&buf, "{s}/{s}.sock", .{ config.cache_dir, stem });
 
-        std.fs.cwd().deleteFile(gencount) catch {};
-        std.fs.cwd().deleteFile(pid_file) catch {};
-        std.fs.cwd().deleteFile(sock_file) catch {};
+        const gencount = gencountFilePath(allocator, config.cache_dir, stem) catch null;
+        if (gencount) |path| {
+            defer allocator.free(path);
+            std.fs.cwd().deleteFile(path) catch {};
+        }
+
+        const pid_file = pidFilePath(allocator, config.cache_dir, stem) catch null;
+        if (pid_file) |path| {
+            defer allocator.free(path);
+            std.fs.cwd().deleteFile(path) catch {};
+        }
+
+        const sock_file = sockFilePath(allocator, config.cache_dir, stem) catch null;
+        if (sock_file) |path| {
+            defer allocator.free(path);
+            std.fs.cwd().deleteFile(path) catch {};
+        }
 
         current_total -= entry.size_bytes;
+        allocator.free(entry.path);
     }
+}
 
-    for (candidates.items) |entry| allocator.free(entry.path);
+fn parseMTime(entry: std.fs.Dir.Entry, dir: std.fs.Dir) !?i64 {
+    const stat = dir.statFile(entry.name) catch return null;
+    return @as(i64, @intCast(stat.mtime));
 }

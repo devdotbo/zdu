@@ -1,6 +1,10 @@
 const std = @import("std");
 const types = @import("../types.zig");
-const builtin = @import("builtin");
+
+const c = @cImport({
+    @cInclude("sys/resource.h");
+    @cInclude("linux/ioprio.h");
+});
 
 pub const DirEntry = struct {
     name: []const u8,
@@ -61,6 +65,7 @@ pub fn getVolumeInfo(path: []const u8) !types.VolumeInfo {
     return .{
         .mount_point = "/",
         .fs_type = .other,
+        .fs_identifier = "other",
         .total_bytes = @intCast(total),
         .used_bytes = @intCast(used),
         .free_bytes = @intCast(free),
@@ -69,5 +74,9 @@ pub fn getVolumeInfo(path: []const u8) !types.VolumeInfo {
 
 pub fn setBackgroundPriority() !void {
     _ = std.c.nice(19);
-    _ = builtin;
+
+    const rc = c.ioprio_set(c.IOPRIO_WHO_PROCESS, 0, (c.IOPRIO_CLASS_IDLE << 13) | 0);
+    if (rc != 0) {
+        return error.Unsupported;
+    }
 }

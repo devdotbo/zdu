@@ -38,6 +38,24 @@ pub fn getVolumeInfo(path: []const u8) !types.VolumeInfo {
     return if (builtin.os.tag == .macos) try darwin.getVolumeInfo(path) else try linux.getVolumeInfo(path);
 }
 
+pub fn getRecursiveGencount(path: []const u8) !?u64 {
+    if (builtin.os.tag == .macos) {
+        return try darwin.getRecursiveGencount(path);
+    }
+    return null;
+}
+
+pub fn getSubtreeGencounts(
+    allocator: std.mem.Allocator,
+    path: []const u8,
+    depth: usize,
+) !?[]types.GencountRecord {
+    if (builtin.os.tag == .macos) {
+        return try darwin.getSubtreeGencounts(allocator, path, depth);
+    }
+    return null;
+}
+
 pub fn setBackgroundPriority() !void {
     if (builtin.os.tag == .macos) {
         try darwin.setBackgroundPriority();

@@ -1,5 +1,6 @@
 const std = @import("std");
 const types = @import("../types.zig");
+const builtin = @import("builtin");
 
 pub const DirEntry = struct {
     name: []const u8,
@@ -64,15 +65,45 @@ pub fn getVolumeInfo(path: []const u8) !types.VolumeInfo {
     else
         types.FsType.other;
 
+    const fs_id = if (std.mem.startsWith(u8, &fs.f_fstypename, "hfs"))
+        "hfs+"
+    else
+        "other";
+
     return .{
         .mount_point = "/",
         .fs_type = fs_type,
+        .fs_identifier = fs_id,
         .total_bytes = @intCast(total),
         .used_bytes = @intCast(used),
         .free_bytes = @intCast(free),
     };
 }
 
+pub fn getRecursiveGencount(path: []const u8) !?u64 {
+    _ = path;
+    const fs = getVolumeInfo(path) catch return null;
+    if (fs.fs_type != .apfs and fs.fs_type != .hfsplus) return null;
+    return null;
+}
+
+pub fn getSubtreeGencounts(
+    allocator: std.mem.Allocator,
+    path: []const u8,
+    depth: usize,
+) !?[]types.GencountRecord {
+    _ = allocator;
+    _ = path;
+    _ = depth;
+    return null;
+}
+
+const PRIO_DARWIN_PROCESS = 4;
+const PRIO_DARWIN_BG = 0x1000;
+
 pub fn setBackgroundPriority() !void {
-    _ = std.c;
+    _ = builtin;
+    const bg = @intCast(c_int, PRIO_DARWIN_BG);
+    const rc = std.c.setpriority(PRIO_DARWIN_PROCESS, 0, bg);
+    if (rc != 0) return error.Unsupported;
 }

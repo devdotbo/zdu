@@ -41,9 +41,9 @@ const ScanJson = struct {
     entries: []const JsonEntry,
 };
 
-const StatusJson = struct {
+pub const StatusJson = struct {
     path: []const u8,
-    pid: ?u32,
+    pid: u32,
     status: []const u8,
     start_time: []const u8,
     elapsed_seconds: u64,
@@ -53,19 +53,25 @@ const StatusJson = struct {
     percent_complete: ?f32,
 };
 
-const SessionsJson = struct {
+pub const SessionsJson = struct {
     sessions: []const StatusJson,
 };
 
-const CancelJson = struct {
+pub const CancelJson = struct {
     pid: ?u32,
     path: []const u8,
     status: []const u8,
 };
 
-const ErrorJson = struct {
+pub const ErrorJson = struct {
     @"error": []const u8,
     code: u8,
+};
+
+pub const RefreshInfo = struct {
+    status: []const u8,
+    pid: ?u32,
+    estimated_remaining_seconds: ?u32,
 };
 
 pub fn formatHumanReadable(
@@ -75,6 +81,7 @@ pub fn formatHumanReadable(
     depth_limit: u8,
     top_n: u16,
     cache_timestamp: ?i64,
+    refresh: ?RefreshInfo,
 ) !void {
     if (cache_timestamp) |ts| {
         const cache_age = ageHuman(allocator, ts);
@@ -110,7 +117,7 @@ pub fn formatHumanReadable(
     try writer.print("bytes       pct   bar                 path\n", .{});
     try writer.print("---------------------------------------------\n", .{});
 
-    const entries = try collectVisibleEntries(allocator, result.root_entry.children, depth_limit, top_n, result.root_entry.size_bytes);
+    const entries = try filterEntries(allocator, result.root_entry.children, depth_limit, top_n, result.root_entry.size_bytes);
     defer allocator.free(entries);
 
     if (entries.len == 0) {
@@ -136,16 +143,33 @@ pub fn formatHumanReadable(
             absolute_path,
         });
     }
-}
 
-fn formatBytes(allocator: Allocator, value: u64) ![]const u8 {
-    const units = [_][]const u8{ "B", "KiB", "MiB", "GiB", "TiB", "PiB" };
-    var scaled: f64 = @floatFromInt(value);
-    var unit_idx: usize = 0;
-    while (scaled >= 1024.0 and unit_idx + 1 < units.len) : (unit_idx += 1) {
-        scaled /= 1024.0;
+    if (refresh) |session| {
+        const status = session.status;
+        const pid_label = if (session.pid) |pid| blk: {
+            const t = try std.fmt.allocPrint(allocator, "{}", .{pid});
+            break :blk t;
+        } else null;
+        defer if (pid_label) |text| allocator.free(text);
+
+        if (session.estimated_remaining_seconds) |estimate| {
+            const remaining = try std.fmt.allocPrint(allocator, "{d}s", .{estimate});
+            defer allocator.free(remaining);
+            try writer.print(
+                "\nrefresh: status={s} pid={s} estimated_remaining_seconds={s}\n",
+                .{
+                    status,
+                    pid_label orelse "none",
+                    remaining,
+                },
+            );
+        } else {
+            try writer.print(
+                "\nrefresh: status={s} pid={s} estimated_remaining_seconds=unknown\n",
+                .{ status, pid_label orelse "none" },
+            );
+        }
     }
-    return try std.fmt.allocPrint(allocator, "{d:.1} {s}", .{ scaled, units[unit_idx] });
 }
 
 pub fn formatJson(
@@ -155,13 +179,14 @@ pub fn formatJson(
     depth_limit: u8,
     top_n: u16,
     cache_timestamp: ?i64,
+    refresh: ?RefreshInfo,
 ) !void {
     const stamp = cache_timestamp orelse result.timestamp;
     const age_seconds = ageSeconds(result.timestamp, stamp);
     const cache_iso = try formatTimestampISO(allocator, stamp);
     defer allocator.free(cache_iso);
 
-    const entries = try collectVisibleEntries(allocator, result.root_entry.children, depth_limit, top_n, result.root_entry.size_bytes);
+    const entries = try filterEntries(allocator, result.root_entry.children, depth_limit, top_n, result.root_entry.size_bytes);
     defer allocator.free(entries);
 
     var json_entries = try std.ArrayList(JsonEntry).initCapacity(allocator, entries.len);
@@ -181,13 +206,19 @@ pub fn formatJson(
         });
     }
 
+    const refresh_payload = if (refresh) |session| .{
+        .status = session.status,
+        .pid = session.pid,
+        .estimated_remaining_seconds = session.estimated_remaining_seconds,
+    } else null;
+
     const payload = ScanJson{
         .path = result.path,
         .cache_timestamp = cache_iso,
         .cache_age_seconds = age_seconds,
         .scan_duration_ms = result.duration_ms,
         .entry_count = result.entry_count,
-        .refresh = null,
+        .refresh = refresh_payload,
         .volume = .{
             .total_bytes = result.volume_info.total_bytes,
             .used_bytes = result.volume_info.used_bytes,
@@ -241,6 +272,16 @@ pub fn formatErrorJson(
     _ = allocator;
     try std.json.stringify(ErrorJson{ .@"error" = message, .code = exit_code }, .{}, writer);
     try writer.writeByte('\n');
+}
+
+pub fn filterEntries(
+    allocator: Allocator,
+    source: []const types.DirectoryEntry,
+    depth_limit: u8,
+    top_n: u16,
+    total_size: u64,
+) ![]OutputEntry {
+    return collectVisibleEntries(allocator, source, depth_limit, top_n, total_size);
 }
 
 fn collectVisibleEntries(
@@ -354,6 +395,16 @@ fn ageSeconds(current: i64, then: i64) u64 {
     return @intCast(end - then);
 }
 
+fn formatBytes(allocator: Allocator, value: u64) ![]const u8 {
+    const units = [_][]const u8{ "B", "KiB", "MiB", "GiB", "TiB", "PiB" };
+    var scaled: f64 = @floatFromInt(value);
+    var unit_idx: usize = 0;
+    while (scaled >= 1024.0 and unit_idx + 1 < units.len) : (unit_idx += 1) {
+        scaled /= 1024.0;
+    }
+    return try std.fmt.allocPrint(allocator, "{d:.1} {s}", .{ scaled, units[unit_idx] });
+}
+
 fn sortBySize(items: []OutputEntry) void {
     if (items.len < 2) return;
     var i: usize = 0;
@@ -401,7 +452,7 @@ fn formatDateFromDays(days: i64) struct { year: i64, month: i64, day: i64 } {
     return .{ .year = year, .month = month, .day = d };
 }
 
-fn formatTimestampISO(allocator: Allocator, timestamp: i64) ![]u8 {
+pub fn formatTimestampISO(allocator: Allocator, timestamp: i64) ![]u8 {
     var secs = timestamp;
     if (secs < 0) secs = 0;
     const days = @divFloor(secs, 86_400);
