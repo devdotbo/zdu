@@ -5,6 +5,16 @@
 **Status**: Draft
 **Input**: User description: "Fast disk usage scanner with persistent cache, background daemon refresh, CLI interface with human and machine-readable output, and macOS-native optimizations for APFS volumes"
 
+## Clarifications
+
+### Session 2026-02-13
+
+- Q: What is the implementation language? → A: Zig
+- Q: How should paths be normalized for cache identity? → A: Canonical absolute real path (resolve symlinks in parent components, normalize slashes, make absolute)
+- Q: What is the cache eviction policy? → A: LRU with size cap (evict least-recently-used entries when total cache exceeds a configurable limit, default 1 GB)
+- Q: How should background scans be throttled? → A: OS-level priority only (low nice value + low I/O priority, let the kernel schedule)
+- Q: What observability level should the tool support? → A: Standard (--verbose flag for foreground stderr output + background processes log to ~/.zigdu/logs/). All data (cache, logs, config) co-located under ~/.zigdu/.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Scan Disk Usage for a Path (Priority: P1)
@@ -140,7 +150,7 @@ On macOS with APFS volumes, the tool uses native filesystem change detection to 
 - **FR-003**: The tool MUST sort output entries by size in descending order (largest first).
 - **FR-004**: The tool MUST persist scan results to a local cache so that subsequent invocations for the same path return instantly.
 - **FR-005**: The tool MUST display cache metadata (timestamp, age) when serving cached results.
-- **FR-006**: The tool MUST spawn a background process to refresh the cache automatically when cached results are displayed.
+- **FR-006**: The tool MUST spawn a background process to refresh the cache automatically when cached results are displayed. The background process MUST run at low OS-level priority (elevated nice value) and low I/O priority (`IOPRIO_CLASS_IDLE` on Linux, `IOPRIO_THROTTLE` on macOS) to avoid impacting interactive workloads.
 - **FR-007**: The tool MUST detect and prevent duplicate background processes for the same path.
 - **FR-008**: The tool MUST support `--json` output with structured data including path sizes, cache metadata, and refresh status.
 - **FR-009**: The tool MUST support `--depth N` to control the displayed directory depth (default: 3).
@@ -157,11 +167,14 @@ On macOS with APFS volumes, the tool uses native filesystem change detection to 
 - **FR-020**: On macOS/APFS, the tool MUST use native filesystem change detection to validate cached subtrees, rescanning only changed portions.
 - **FR-021**: On non-macOS platforms or non-APFS filesystems, the tool MUST fall back to full rescans without errors.
 - **FR-022**: The tool MUST clean up background process resources (process tracking files, communication channels) on exit, whether normal or due to errors.
+- **FR-023**: The tool MUST enforce an LRU cache eviction policy, removing least-recently-used entries when total cache size exceeds a configurable cap (default: 1 GB). Eviction runs opportunistically during cache writes.
+- **FR-024**: The tool MUST support `--verbose` to emit diagnostic output (skipped paths, cache hit/miss, APFS detection, timing) to stderr during foreground operation.
+- **FR-025**: Background scan processes MUST log diagnostic output to `~/.zigdu/logs/`, one log file per session, to enable post-hoc diagnosis of background scan behavior.
 
 ### Key Entities
 
 - **Scan Result**: A snapshot of disk usage for a path, containing the scanned path, timestamp, scan duration, total/used/free space, and a tree of directory entries each with path, size, file count, and directory count.
-- **Cache Entry**: A persisted scan result stored on disk, identified by the scanned path, with a version identifier for format compatibility.
+- **Cache Entry**: A persisted scan result stored on disk, identified by the **canonical absolute real path** of the scanned directory (symlinks in parent components resolved, trailing slashes normalized, relative paths made absolute), with a version identifier for format compatibility.
 - **Background Session**: A running scan process identified by PID, associated with a target path, with progress state (files scanned, estimated completion) and communication capability for status queries and cancellation.
 - **Directory Entry**: A single node in the scan result tree, representing a directory with its cumulative size (all descendants), direct file count, subdirectory count, and depth level.
 
@@ -181,8 +194,10 @@ On macOS with APFS volumes, the tool uses native filesystem change detection to 
 ## Assumptions
 
 - Users have standard filesystem permissions; the tool does not require elevated privileges for normal operation.
-- The primary storage for cached results is the user's home directory (`~/.cache/zigdu/`), which is assumed to have sufficient space for cache files.
+- All persistent data is stored under a unified base directory `~/.zigdu/` with subdirectories: `cache/` for scan results, `logs/` for background process logs, and a top-level config file for user settings (e.g., cache size cap). This directory is assumed to have sufficient space.
 - Cache files for 15 million entries are expected to be under 500 MB.
+- The cache directory enforces an LRU eviction policy with a default 1 GB size cap. When a new cache write would exceed the cap, the least-recently-used entries are evicted first.
 - The tool targets macOS (APFS) and Linux (ext4, XFS, btrfs) as primary platforms. Other platforms are out of scope for the initial release.
 - On macOS, APFS-specific optimizations are used only when the target volume is APFS; other macOS filesystems (HFS+, NFS) use the generic scanning path.
 - The `--cross-mount` flag defaults to off, meaning external drives, network volumes, and other mount points are excluded unless explicitly requested.
+- The implementation language is **Zig**, chosen for direct syscall access (macOS `getattrlistbulk`, APFS volume capabilities), zero runtime overhead, and alignment with the performance targets (50ms cached retrieval, <60s cold scan of 15M files, <200MB memory).
