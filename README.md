@@ -1,5 +1,7 @@
 # zigdu
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 Fast, cache-first disk usage scanning for humans, scripts, and autonomous agents.
 
 `zigdu` scans directory trees, stores structured cache results, and returns warm responses quickly on repeated runs. It also supports background refresh sessions with explicit status and cancellation controls.
