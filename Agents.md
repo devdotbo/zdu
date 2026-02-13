@@ -39,6 +39,7 @@ Last updated: 2026-02-13
 - [x] Confirmed cached warm path, cold path, RSS, and contract checks are at least partially validated.
 - [x] Logged blockers and measured values that are currently driving remaining loops.
 - [x] Ran the requested post-completion verification command sequence, captured deterministic artifacts, and documented outcomes in validation report.
+- [x] Executed strict-release closeout plan across T031/T032 on deterministic warning-free fixtures and updated report evidence to resolve APFS traceability.
 
 ## Latest loop entries
 
@@ -47,6 +48,10 @@ Last updated: 2026-02-13
 3. 2026-02-13 — completed T032 loop items A and B; removed `@cImport` usage in `src/ipc.zig`, `src/daemon.zig`, and `src/platform/linux.zig`, made socket permission setup non-fatal.
 4. 2026-02-13 — aligned PID reporting in IPC/daemon with libc-free Linux path via `std.os.linux.getpid()` and retained libc-backed fallback for non-Linux.
 5. 2026-02-13 — completed external web research pass for Zig/toolchain and platform syscall constraints; recorded findings below.
+6. 2026-02-13 — strict-release closeout executed:
+   - Re-ran baseline build/test and fixture-based T031/T032 checks with strict pass/fail interpretation.
+   - Reproduced APFS unchanged and stale-subtree behavior deterministically on a clean cache state.
+   - Confirmed SC-006 cross-compilation remains successful and recorded all results in `reports/validation-2026-02-13.md`.
 
 ## Web research notes (project-relevant unknowns)
 

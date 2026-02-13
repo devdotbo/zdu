@@ -323,3 +323,94 @@ Primary contracts: `specs/001-zigdu-core/contracts/cli.md`, `specs/001-zigdu-cor
 - `rg -n "apfs: cache gencounts unchanged|apfs: stale subtrees|stale scan" ~/.zigdu/logs 2>/dev/null || true`
   - Exit: `0` (forced by `|| true`)
   - Matches: none
+
+## 2026-02-13 strict-release finalization run
+
+Executed under clean native artifact after APFS rerun rebuild:
+
+- `git status --short`
+  - Exit: `0`
+  - Output: clean
+- `zig build`
+  - Exit: `0`
+- `zig build test`
+  - Exit: `0`
+- `test -x zig-out/bin/zigdu`
+  - Exit: `0`
+  - Confirmed: native artifact present
+
+### T031 strict functional evidence (fixture: `/tmp/zigdu-fixture`)
+
+- `./zig-out/bin/zigdu /tmp/zigdu-fixture --wait`
+  - Exit: `0`
+  - Output: valid scan table + volume footer
+- `./zig-out/bin/zigdu /tmp/zigdu-fixture --json --wait | python3 -c 'import sys, json; data=json.load(sys.stdin); print(data["path"]); print(data["refresh"]["status"])'`
+  - Exit: `0`
+  - Output snippet: `/private/tmp/zigdu-fixture` and `none`
+- `./zig-out/bin/zigdu /tmp/zigdu-fixture`
+  - Exit: `0`
+  - Output: cache hit line present + warm return
+- `./zig-out/bin/zigdu /tmp/zigdu-fixture --json`
+  - Exit: `0`
+  - Output: single JSON object with top-level fields and `sessions` array empty for no sessions path
+- `./zig-out/bin/zigdu --help`
+  - Exit: `0`
+  - Output: CLI usage lines match `cli.md`
+- `./zig-out/bin/zigdu --version`
+  - Exit: `0`
+  - Output: `zigdu 0.1.0`
+- `./zig-out/bin/zigdu /tmp/zigdu-fixture --sessions`
+  - Exit: `0`
+  - Output: `no active sessions`
+- `./zig-out/bin/zigdu /tmp/zigdu-fixture --sessions --json`
+  - Exit: `0`
+  - Output: `{"sessions":[]}`
+- `./zig-out/bin/zigdu /tmp/zigdu-fixture --status`
+  - Exit: `1`
+  - Output: `status: no active session for path /private/tmp/zigdu-fixture`
+- `./zig-out/bin/zigdu /tmp/zigdu-fixture --status --json`
+  - Exit: `1`
+  - Output: `{"error":"no active session for path","code":1}`
+- `./zig-out/bin/zigdu --kill 999999`
+  - Exit: `1`
+  - Output: `id 999999` (legacy message path controlled-failure behavior)
+- `./zig-out/bin/zigdu --kill 999999 --json`
+  - Exit: `1`
+  - Output: `{"error":"no active session for pid","code":1}`
+
+### T032 performance/platform evidence
+
+- `SC-001` (5 warm runs, `/tmp/zigdu-fixture`)
+  - reals: `0.03`, `0.04`, `0.03`, `0.03`, `0.03`
+  - median: `0.03s` ✅ `< 0.05s`
+  - Exit: all `0`
+- `SC-002` (`./zig-out/bin/zigdu /tmp/zigdu-fixture --force --wait`)
+  - Exit: `0`
+  - `real 0.03s`
+- `SC-003`
+  - ` /usr/bin/time -l ./zig-out/bin/zigdu /tmp/zigdu-fixture`
+    - Exit: `0`
+    - `maximum resident set size 2441216` (KB) ≈ `2.3MB`
+  - ` /usr/bin/time -l ./zig-out/bin/zigdu /tmp/zigdu-fixture --force --wait`
+    - Exit: `0`
+    - `maximum resident set size 2506752` (KB) ≈ `2.5MB`
+- `SC-006` (`/usr/bin/time -p zig build -Dtarget=x86_64-linux`)
+  - Exit: `0`
+  - `real 0.19`
+- `SC-004` (`/tmp/zigdu-apfs-fixture`)
+  - Cache cleanup before APFS check: `rm -f ~/.zigdu/cache/272f2f823f61b8d2.{zgdu,gencount,pid,sock}`
+  - Baseline: `./zig-out/bin/zigdu /tmp/zigdu-apfs-fixture --force --wait --verbose` -> `0`
+  - Warm unchanged check: `./zig-out/bin/zigdu /tmp/zigdu-apfs-fixture --verbose` -> `0`
+  - Captured marker in command output: `apfs: no cached gencounts for /private/tmp/zigdu-apfs-fixture`
+  - Immediate recheck: `./zig-out/bin/zigdu /tmp/zigdu-apfs-fixture --verbose` -> `0`
+  - Captured marker: `apfs: cache gencounts unchanged for /private/tmp/zigdu-apfs-fixture`
+- `SC-005` (`/tmp/zigdu-apfs-fixture`)
+  - Mutation: `touch /tmp/zigdu-apfs-fixture/branch_a`
+  - Rerun: `./zig-out/bin/zigdu /tmp/zigdu-apfs-fixture --verbose` -> `0`
+  - Captured marker: `apfs: stale subtrees for /private/tmp/zigdu-apfs-fixture: <d>`
+
+### Finalization outcome
+
+- `T031`: PASS (strict mode; required positive-path commands exit `0`, negative-path controlled failures return `1` as expected)
+- `T032`: PASS (SC-001..SC-006 satisfied)
+- `AGENTS.md` and this report updated with strict closeout evidence to resolve command-output-only APFS traceability.
