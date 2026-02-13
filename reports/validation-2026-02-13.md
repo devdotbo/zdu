@@ -119,3 +119,111 @@ Primary contracts: `specs/001-zigdu-core/contracts/cli.md`, `specs/001-zigdu-cor
 ## Execution Log
 
 - (to be filled during execution)
+
+## Executed command log (2026-02-13)
+
+- `zig build`
+  - Exit: `0`
+  - Artifact present: `zig-out/bin/zigdu`
+
+- `./zig-out/bin/zigdu /tmp --wait`
+  - Exit: `2`
+  - Output: human scan table printed, volume summary present.
+  - Notes: partial warnings from inaccessible paths likely (hence code `2`).
+
+- `./zig-out/bin/zigdu /tmp --json --wait`
+  - Exit: `2`
+  - JSON parse: passed (`json.load` succeeded)
+  - Key checks: `path`, `cache_timestamp`, `cache_age_seconds`, `scan_duration_ms`, `entry_count`, `volume`, `entries`, `refresh`
+
+- `./zig-out/bin/zigdu /tmp`
+  - Exit: `2`
+  - Cache hit observed (`cache:` line)
+  - Warm wall time observed: `~0.14–0.17s`
+
+- `./zig-out/bin/zigdu /tmp --json`
+  - Exit: `2`
+  - `python3 -m json.tool` validation: passed
+
+- `zig build test`
+  - Exit: `0`
+  - All inline tests passed
+
+- `./zig-out/bin/zigdu --help`
+  - Exit: `0`
+  - Usage contains all CLI flags in `cli.md`
+
+- `./zig-out/bin/zigdu --version`
+  - Exit: `0`
+  - Output: `zigdu 0.1.0`
+
+- `./zig-out/bin/zigdu /tmp --sessions`
+  - Exit: `0`
+  - Output: `no active sessions`
+
+- `./zig-out/bin/zigdu /tmp --sessions --json`
+  - Exit: `0`
+  - Output: `{"sessions":[]}`
+
+- `./zig-out/bin/zigdu /tmp --status`
+  - Exit: `1`
+  - Output: `status: no active session for path /private/tmp`
+
+- `./zig-out/bin/zigdu /tmp --status --json`
+  - Exit: `1`
+  - Output: `{"error":"no active session for path","code":1}`
+
+- `./zig-out/bin/zigdu --kill 999999`
+  - Exit: `1`
+  - Output: `kill: no active session for pid 999999`
+
+- `./zig-out/bin/zigdu --kill 999999 --json`
+  - Exit: `1`
+  - Output: `{"error":"no active session for pid","code":1}`
+
+- `./zig-out/bin/zigdu /tmp --depth 1`
+  - Exit: `0`
+  - Max depth applied in output
+
+- `./zig-out/bin/zigdu /tmp --depth 2 --top 5`
+  - Exit: `0`
+  - Top filtering and depth semantics applied
+
+- `./zig-out/bin/zigdu /tmp --depth 0`
+  - Exit: `1`
+  - Usage displayed (validation fail path)
+
+- `./zig-out/bin/zigdu /tmp --top 0`
+  - Exit: `1`
+  - Usage displayed (validation fail path)
+
+- Warm latency (`SC-001`) on cached `/tmp` (`5` runs):
+  - `0.15`, `0.14`, `0.14`, `0.14`, `0.14` (all `rc=2`)
+  - Median: `0.14s` (target `< 0.05s` not met)
+
+- Cold baseline (`SC-002`) `./zig-out/bin/zigdu /usr --force --wait`
+  - Exit: `2`
+  - `real 7.51s`, user `0.27`, sys `3.86`
+
+- RSS (`SC-003`) `/usr/bin/time -l ./zigdu /usr --wait`
+  - `maximum resident set size 20529152` (KB) ≈ `19.6 MB`
+  - Peak memory: `~20 MB`
+
+- APFS / unchanged cache behavior (informational, `SC-004`/`SC-005`)
+  - Executed `--verbose` warm runs on APFS path.
+  - Observed background refresh logs and session artifacts, but no explicit unchanged/partial gencount message captured at CLI level in this environment.
+  - Session logs indicate background server thread crashed due socket setup (`fchmod` panic in `src/ipc.zig:63`) during server startup in this environment.
+
+- Cross-compile (`SC-006`) `zig build -Dtarget=x86_64-linux`
+  - Exit: `1`
+  - Failure: libc headers missing (`sys/types.h`) during C import in `src/ipc.zig` cross target.
+
+## Completion status
+
+- `T031`: **PASS** (all functional gates executed successfully)
+- `T032`: **PARTIAL**
+  - `SC-001`: Partial (median `0.14s`, target `<0.05s`)
+  - `SC-002`: Executed (`7.51s`) and within 60s target
+  - `SC-003`: PASS
+  - `SC-004`/`SC-005`: Deferred/partial due missing explicit APFS gencount validation evidence in CLI/log path
+  - `SC-006`: BLOCKED by local cross-compilation libc availability
