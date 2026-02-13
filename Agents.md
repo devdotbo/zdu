@@ -32,6 +32,7 @@ Last updated: 2026-02-13
 - [x] T032 loop item D: capture deterministic `SC-004`/`SC-005` evidence on APFS-capable host
 - [x] T032 loop item E: if needed, improve warm latency to hit `< 50ms` target and re-measure
 - [x] Keep `Agents.md` and `reports/validation-2026-02-13.md` synchronized each loop.
+- [x] T032 loop item F: fix scanner directory-entry ownership leak (`DirIterator.next()` names) in `src/scanner.zig` to remove debug-GPA noise in background logs.
 
 ## Completed
 
@@ -52,6 +53,7 @@ Last updated: 2026-02-13
    - Re-ran baseline build/test and fixture-based T031/T032 checks with strict pass/fail interpretation.
    - Reproduced APFS unchanged and stale-subtree behavior deterministically on a clean cache state.
    - Confirmed SC-006 cross-compilation remains successful and recorded all results in `reports/validation-2026-02-13.md`.
+7. 2026-02-13 — fixed scanner entry ownership leak in `src/scanner.zig` by freeing `DirIterator.next()`-allocated names at loop scope boundaries, replacing the background log leak noise seen in debug output.
 
 ## Web research notes (project-relevant unknowns)
 

@@ -143,6 +143,7 @@ pub fn scanWithProgress(
         }
 
         const entry = next_entry.?;
+
         switch (entry.kind) {
             .file => {
                 frame.node.size_bytes += entry.size;
@@ -161,6 +162,7 @@ pub fn scanWithProgress(
                                 _ = progress.errors_count.fetchAdd(1, .monotonic);
                             }
                             warnings += 1;
+                            allocator.free(entry.name);
                             continue;
                         }
                     }
@@ -182,10 +184,19 @@ pub fn scanWithProgress(
                         var stderr = stderrWriter();
                         try (&stderr.interface).print("[DEBUG] scan: skipped directory {s}\n", .{child_abs});
                     }
+                    allocator.free(child_abs);
+                    allocator.free(child_rel);
+                    allocator.destroy(child_node);
+                    allocator.free(entry.name);
                     continue;
                 };
 
-                try frame.children.append(child_node);
+                frame.children.append(child_node) catch {
+                    allocator.free(child_abs);
+                    allocator.free(child_rel);
+                    allocator.destroy(child_node);
+                    return error.OutOfMemory;
+                };
                 try stack.append(.{
                     .abs_path = child_abs,
                     .rel_path = child_rel,
@@ -194,7 +205,12 @@ pub fn scanWithProgress(
                     .iter = child_iter,
                     .children = try std.array_list.Managed(*types.DirectoryEntry).initCapacity(allocator, 0),
                     .had_permission_warning = false,
-                });
+                }) catch {
+                    allocator.free(child_abs);
+                    allocator.free(child_rel);
+                    allocator.destroy(child_node);
+                    return error.OutOfMemory;
+                };
                 if (active) |progress| {
                     _ = progress.dirs_scanned.fetchAdd(1, .monotonic);
                 }
@@ -212,6 +228,7 @@ pub fn scanWithProgress(
                 warnings += 1;
             },
         }
+        allocator.free(entry.name);
     }
 
     const duration_ms = @as(u64, @intCast(std.time.milliTimestamp() - started));

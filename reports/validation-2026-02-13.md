@@ -414,3 +414,14 @@ Executed under clean native artifact after APFS rerun rebuild:
 - `T031`: PASS (strict mode; required positive-path commands exit `0`, negative-path controlled failures return `1` as expected)
 - `T032`: PASS (SC-001..SC-006 satisfied)
 - `AGENTS.md` and this report updated with strict closeout evidence to resolve command-output-only APFS traceability.
+
+## 2026-02-13 scan-loop cleanup pass (post-finalization)
+
+- `src/scanner.zig` correction applied:
+  - `scanWithProgress` now frees `entry.name` for every `DirIterator` item before moving to the next entry.
+  - This targets the debug allocator leak messages from `platform/darwin.zig` + `scanner.zig` in background run logs.
+- Contract alignment reminder (for current `SC-001` evidence):
+  - `/tmp` invocations can legitimately return exit code `2` due permission-denied subtree traversal on restricted entries.
+  - This is still compliant with `specs/001-zigdu-core/contracts/cli.md` (`2` = partial results with warnings).
+- Remaining readiness action:
+  - Rebuild native artifact (`zig build`) and re-run the SC-001 warm loop on a fixture to confirm the leak output is gone in fresh logs.
