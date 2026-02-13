@@ -161,10 +161,16 @@
 
 - [x] T029 [P] Implement Config file loading in `src/types.zig`: `Config.load() Config` reading `~/.zigdu/config` key=value format, parsing each known key (cache_dir, log_dir, max_cache_bytes, default_depth, default_top), applying validation rules V-030..V-033 (clamp out-of-range values with warning to stderr), creating `~/.zigdu/`, `cache/`, `logs/` directories if they do not exist; add `max_log_age_days` config key (default: 30, minimum: 1) and on startup delete log files in `{log_dir}/` older than the configured age; called at startup in main.zig before any other operation
 - [x] T030 [P] Implement verbose diagnostic logging across modules: in `src/main.zig` pass verbose flag through to scanner and cache; scanner logs to stderr: cache hit/miss, APFS detection, skipped paths, timing; daemon writes structured log lines (`[INFO]`/`[WARN]`/`[DEBUG]` prefixed with ISO 8601 timestamp) to `{log_dir}/{path_hash}-{timestamp}.log` per ipc-protocol.md log format; one log file per background session (FR-025)
-- [ ] T031 Run quickstart.md validation: build with `zig build`, run `zigdu /tmp --wait`, verify human-readable output; run `zigdu /tmp --json --wait`, verify valid JSON; run `zigdu /tmp` (cached), verify instant return with cache age; run `zig build test`, verify all inline test blocks pass (test blocks are written as part of each implementation task, not as separate tasks).  
-  - Current status: **Blocked** in this environment by build failure in `src/ipc.zig:374` (`c.sockaddr_un.sun_path` no longer available), so validation commands after build are not yet run.
+- [x] T031 Run quickstart.md validation: build with `zig build`, run `zigdu /tmp --wait`, verify human-readable output; run `zigdu /tmp --json --wait`, verify valid JSON; run `zigdu /tmp` (cached), verify instant return with cache age; run `zig build test`, verify all inline test blocks pass (test blocks are written as part of each implementation task, not as separate tasks).  
+  - Completed: build succeeds, scan commands execute, JSON parses, cached behavior confirmed, `zig build test` passes.
 - [ ] T032 Run performance and cross-platform validation for success criteria: measure cached result retrieval time and verify <50ms (SC-001); time a cold scan on a large directory and report duration vs 60s target (SC-002); monitor RSS memory during scan and verify <200MB (SC-003); on macOS/APFS, time cache validation for unchanged volume and verify <1s (SC-004); on macOS/APFS, modify one subtree, run warm scan, and verify partial rescan completes in <10s (SC-005); verify `zig build -Dtarget=x86_64-linux` cross-compiles without errors (SC-006); verify `zigdu --help` and `zigdu --version` output format matches cli.md contract on both targets.  
-  - Current status: **Blocked** until T031 build prerequisite passes.
+  - Current status: **Partial** in this environment.  
+    - SC-001: cached retrieval below 50ms for small target (`/tmp/zigdu-validate`), but `/tmp` dataset warm runs ~130-160ms.
+    - SC-002: cold `/usr` scan completed in ~7.7s.
+    - SC-003: RSS observed near 4.47MB (`time -l` on cached run).
+    - SC-004: APFS branch exercised via verbose logs.
+    - SC-005: partial/unchanged-branch execution observed; dedicated timing is pending.
+    - SC-006: `zig build -Dtarget=x86_64-linux` fails locally due missing libc headers (`sys/types.h`) in cross target environment.
 
 ---
 
