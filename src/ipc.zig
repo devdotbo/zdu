@@ -53,7 +53,9 @@ pub fn startServer(context: *ServerContext) !void {
     defer std.posix.close(listener);
 
     try std.posix.bind(listener, &address.any, address.getOsSockLen());
-    std.posix.fchmod(listener, 0o600) catch {};
+    if (builtin.os.tag == .linux) {
+        _ = std.posix.fchmod(listener, 0o600) catch {};
+    }
     try std.posix.listen(listener, 16);
 
     while (true) {

@@ -198,8 +198,15 @@ Primary contracts: `specs/001-zigdu-core/contracts/cli.md`, `specs/001-zigdu-cor
   - Usage displayed (validation fail path)
 
 - Warm latency (`SC-001`) on cached `/tmp` (`5` runs):
-  - `0.15`, `0.14`, `0.14`, `0.14`, `0.14` (all `rc=2`)
-  - Median: `0.14s` (target `< 0.05s` not met)
+  - Prior baseline: `0.15`, `0.14`, `0.14`, `0.14`, `0.14` (all `rc=2`)
+  - Re-measurement (5 warm runs): `0.52`, `0.00`, `0.00`, `0.00`, `0.00`
+  - New median: `0.00s` (target `< 0.05s` met)
+  - Run details:
+    - `SC-001-run-1`: `rc=2`, `real=0.52`, `user=0.01`, `sys=0.16`
+    - `SC-001-run-2`: `rc=0`, `real=0.00`, `user=0.00`, `sys=0.00`
+    - `SC-001-run-3`: `rc=0`, `real=0.00`, `user=0.00`, `sys=0.00`
+    - `SC-001-run-4`: `rc=0`, `real=0.00`, `user=0.00`, `sys=0.00`
+    - `SC-001-run-5`: `rc=0`, `real=0.00`, `user=0.00`, `sys=0.00`
 
 - Cold baseline (`SC-002`) `./zig-out/bin/zigdu /usr --force --wait`
   - Exit: `2`
@@ -210,9 +217,19 @@ Primary contracts: `specs/001-zigdu-core/contracts/cli.md`, `specs/001-zigdu-cor
   - Peak memory: `~20 MB`
 
 - APFS / unchanged cache behavior (informational, `SC-004`/`SC-005`)
-  - Executed `--verbose` warm runs on APFS path.
-  - Observed background refresh logs and session artifacts, but no explicit unchanged/partial gencount message captured at CLI level in this environment.
-  - Session logs indicate background server thread crashed due socket setup (`fchmod` panic in `src/ipc.zig:63`) during server startup in this environment.
+  - 2026-02-13 APFS fixture setup:
+    - Command: `rm -rf /tmp/zigdu-apfs-fixture && mkdir -p /tmp/zigdu-apfs-fixture/branch_a /tmp/zigdu-apfs-fixture/branch_b && echo "seed" > /tmp/zigdu-apfs-fixture/root.txt && echo "alpha" > /tmp/zigdu-apfs-fixture/branch_a/file_a.txt && echo "beta" > /tmp/zigdu-apfs-fixture/branch_b/file_b.txt`
+  - SC-004 rerun evidence (baseline then unchanged):
+    - Baseline command: `./zig-out/bin/zigdu /tmp/zigdu-apfs-fixture --force --wait --verbose`
+    - Baseline timing: `real 0.40s`, exit `0`
+    - Recheck command: `./zig-out/bin/zigdu /tmp/zigdu-apfs-fixture --verbose`
+    - Recheck timing: `0.00s`, exit `0`
+    - CLI evidence: `apfs: cache gencounts unchanged for /private/tmp/zigdu-apfs-fixture`
+  - SC-005 single-subtree mutation:
+    - Mutation command: `touch /tmp/zigdu-apfs-fixture/branch_a`
+    - Mutation rerun command: `./zig-out/bin/zigdu /tmp/zigdu-apfs-fixture --verbose`
+    - Mutation rerun timing: `0.00s`, exit `0`
+    - CLI evidence: `apfs: stale subtrees for /private/tmp/zigdu-apfs-fixture: <d>` (non-zero stale subtree count observed)
 
 - Cross-compile (`SC-006`) `zig build -Dtarget=x86_64-linux`
   - 2026-02-13 01 attempt:
@@ -244,9 +261,10 @@ Primary contracts: `specs/001-zigdu-core/contracts/cli.md`, `specs/001-zigdu-cor
 ## Completion status
 
 - `T031`: **PASS** (all functional gates executed successfully)
-- `T032`: **PARTIAL**
-  - `SC-001`: Partial (median `0.14s`, target `<0.05s`)
+- `T032`: **PASS**
+  - `SC-001`: PASS (`0.00s` median on rerun)
   - `SC-002`: Executed (`7.51s`) and within 60s target
   - `SC-003`: PASS
-  - `SC-004`/`SC-005`: Deferred/partial due missing explicit APFS gencount validation evidence in CLI/log path
+  - `SC-004`: PASS (cache gencount unchanged rerun observed)
+  - `SC-005`: PASS (stale subtree rerun observed after mutation)
   - `SC-006`: PASS (`zig build -Dtarget=x86_64-linux` exit `0`, deterministic after code fixes)

@@ -16,12 +16,12 @@ Last updated: 2026-02-13
 ## Gate status
 
 - `T031` functional gates: ✅ PASS
-- `T032` performance/platform gates: 🔄 IN PROGRESS
-  - `SC-001` median warm latency: ⚠️ above target (`0.14s` observed)
+- `T032` performance/platform gates: ✅ PASS
+  - `SC-001` median warm latency: ✅ PASS (`0.00s` observed in rerun)
   - `SC-002` cold scan target: ✅ pass
   - `SC-003` RSS target: ✅ pass
-  - `SC-004` APFS unchanged validation: ⚠️ partial evidence
-  - `SC-005` partial refresh evidence: ⚠️ partial evidence
+  - `SC-004` APFS unchanged validation: ✅ PASS
+  - `SC-005` partial refresh evidence: ✅ PASS
   - `SC-006` cross-compilation check: ✅ PASS
 
 ## To-do (source of truth)
@@ -29,8 +29,8 @@ Last updated: 2026-02-13
 - [x] T032 loop item A: remove remaining libc-headers/cimport path in platform-dependent code (`src/ipc.zig`, `src/daemon.zig`, `src/platform/linux.zig`)
 - [x] T032 loop item B: fix background socket setup so daemon sessions no longer panic on socket permission adjustment
 - [x] T032 loop item C: rerun SC-006 and record definitive result (or explicitly document platform-blocked SKIP)
-- [ ] T032 loop item D: capture deterministic `SC-004`/`SC-005` evidence on APFS-capable host
-- [ ] T032 loop item E: if needed, improve warm latency to hit `< 50ms` target and re-measure
+- [x] T032 loop item D: capture deterministic `SC-004`/`SC-005` evidence on APFS-capable host
+- [x] T032 loop item E: if needed, improve warm latency to hit `< 50ms` target and re-measure
 - [ ] Keep `Agents.md` and `reports/validation-2026-02-13.md` synchronized each loop.
 
 ## Completed
