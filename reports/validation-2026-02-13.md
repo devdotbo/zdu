@@ -64,7 +64,7 @@ Primary contracts: `specs/001-zigdu-core/contracts/cli.md`, `specs/001-zigdu-cor
 ## T032 Performance + Platform Gates
 
 ### P006 cold vs cached latency
-- [ ] **SC-001**: cache retrieval latency (<50ms target)
+- [x] **SC-001**: cache retrieval latency (<50ms target)
   - Warm cache with: `./zig-out/bin/zigdu /tmp --force --wait`
   - Run at least 5 warm runs: `./usr/bin/time -p ./zig-out/bin/zigdu /tmp`
   - Record min/median/p99 and median `< 0.05s` in final log
@@ -73,20 +73,20 @@ Primary contracts: `specs/001-zigdu-core/contracts/cli.md`, `specs/001-zigdu-cor
   - Record elapsed runtime; target `< 60s` (or environment exception)
 
 ### P007 memory and resource checks
-- [ ] **SC-003**: RSS
+- [x] **SC-003**: RSS
   - macOS: `/usr/bin/time -l ./zig-out/bin/zigdu <path> --wait`
   - Linux: `/usr/bin/time -v ./zig-out/bin/zigdu <path> --wait`
   - Capture peak RSS; target `< 200MB`
 
 ### P008 APFS optimization checks (macOS/APFS only)
-- [ ] **SC-004**: unchanged cache validation
+- [x] **SC-004**: unchanged cache validation
   - Warm scan and rerun; unchanged-validation wall time `< 1s` for common paths
-- [ ] **SC-005**: partial subtree refresh
+- [x] **SC-005**: partial subtree refresh
   - mutate one subtree under cached path, run warm invocation
   - confirm behavior uses partial refresh path and is faster than full scan
 
 ### P009 portability checks
-- [ ] **SC-006**: cross-compilation
+- [x] **SC-006**: cross-compilation
   - `zig build -Dtarget=x86_64-linux`
   - Confirm success or capture deterministic environment blocker
 - [ ] CLI parity check on each target
