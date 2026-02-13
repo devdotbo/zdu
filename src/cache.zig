@@ -19,7 +19,7 @@ const CachedEntry = struct {
 
 const CachedTreeNode = struct {
     node: *types.DirectoryEntry,
-    children: std.ArrayList(*types.DirectoryEntry),
+    children: std.array_list.Managed(*types.DirectoryEntry),
 };
 
 const EvictionCandidate = struct {
@@ -68,7 +68,7 @@ pub fn readCache(
     if (header.timestamp > now) return null;
     if (header.entry_count == 0) return null;
 
-    var records = try std.ArrayList(CachedEntry).initCapacity(allocator, try safeCastUsize(header.entry_count));
+    var records = try std.array_list.Managed(CachedEntry).initCapacity(allocator, try safeCastUsize(header.entry_count));
     defer {
         for (records.items) |record| allocator.free(record.path);
         records.deinit();
@@ -85,7 +85,7 @@ pub fn readCache(
     validateDepthSequence(records.items) catch return null;
 
     const root_entry = try rebuildTree(allocator, records.items);
-    const volume_info = platform.getVolumeInfo(canonical_path) catch return null;
+    const volume_info = platform.getVolumeInfo(allocator, canonical_path) catch return null;
 
     return .{
         .path = canonical_path,
@@ -107,10 +107,14 @@ pub fn writeCache(
     const cache_path = try cacheFilePath(allocator, config.cache_dir, path_hash);
     defer allocator.free(cache_path);
 
-    var af = try std.fs.cwd().atomicFile(cache_path, .{ .mode = 0o600 });
+    var cache_atomic_buffer: [8192]u8 = undefined;
+    var af = try std.fs.cwd().atomicFile(cache_path, .{
+        .mode = 0o600,
+        .write_buffer = &cache_atomic_buffer,
+    });
     errdefer af.deinit();
 
-    var writer = af.file.writer();
+    var writer = &af.file_writer.interface;
     try writer.writeAll(&CACHE_MAGIC);
     try writer.writeInt(u32, CACHE_VERSION, .little);
     try writer.writeInt(i64, if (result.timestamp == 0) std.time.timestamp() else result.timestamp, .little);
@@ -134,10 +138,14 @@ pub fn writeGencounts(
     const gencount_path = try gencountFilePath(allocator, config.cache_dir, path_hash);
     defer allocator.free(gencount_path);
 
-    var af = try std.fs.cwd().atomicFile(gencount_path, .{ .mode = 0o600 });
+    var gencount_atomic_buffer: [8192]u8 = undefined;
+    var af = try std.fs.cwd().atomicFile(gencount_path, .{
+        .mode = 0o600,
+        .write_buffer = &gencount_atomic_buffer,
+    });
     errdefer af.deinit();
 
-    var writer = af.file.writer();
+    var writer = &af.file_writer.interface;
     try writer.writeAll(&GCNT_MAGIC);
     try writer.writeInt(u32, @intCast(records.len), .little);
 
@@ -178,30 +186,30 @@ pub fn readGencounts(
     if (!std.mem.eql(u8, bytes[0..4], &GCNT_MAGIC)) return null;
     cursor += 4;
 
-    const count = std.mem.readInt(u32, bytes[cursor .. cursor + 4], .little);
+    const count = readIntFromSlice(u32, bytes, cursor);
     cursor += 4;
 
-    var records = try std.ArrayList(types.GencountRecord).initCapacity(allocator, count);
+    var records = try std.array_list.Managed(types.GencountRecord).initCapacity(allocator, count);
     defer records.deinit();
 
     var i: u32 = 0;
     while (i < count) : (i += 1) {
         if (cursor + 2 > bytes.len) return null;
-        const path_len = std.mem.readInt(u16, bytes[cursor .. cursor + 2], .little);
+        const path_len = readIntFromSlice(u16, bytes, cursor);
         cursor += 2;
         if (cursor + path_len > bytes.len) return null;
         const path = try allocator.dupe(u8, bytes[cursor .. cursor + path_len]);
         cursor += path_len;
 
         if (cursor + 8 > bytes.len) return null;
-        const value = std.mem.readInt(u64, bytes[cursor .. cursor + 8], .little);
+        const value = readIntFromSlice(u64, bytes, cursor);
         cursor += 8;
 
         try records.append(.{ .path = path, .value = value });
     }
 
     if (cursor != bytes.len) return null;
-    return records.toOwnedSlice();
+    return @as(?[]types.GencountRecord, try records.toOwnedSlice());
 }
 
 fn writeDirectory(writer: anytype, node: *const types.DirectoryEntry) !void {
@@ -222,7 +230,7 @@ fn writeDirectory(writer: anytype, node: *const types.DirectoryEntry) !void {
 
 fn parseRecord(allocator: Allocator, bytes: []const u8, cursor: *usize, file_size: usize) !CachedEntry {
     if (cursor.* + 2 > file_size) return error.InvalidCache;
-    const path_len = std.mem.readInt(u16, bytes[cursor.* .. cursor.* + 2], .little);
+    const path_len = readIntFromSlice(u16, bytes, cursor.*);
     cursor.* += 2;
 
     if (cursor.* + path_len > file_size) return error.InvalidCache;
@@ -230,15 +238,15 @@ fn parseRecord(allocator: Allocator, bytes: []const u8, cursor: *usize, file_siz
     cursor.* += path_len;
 
     if (cursor.* + 8 > file_size) return error.InvalidCache;
-    const size_bytes = std.mem.readInt(u64, bytes[cursor.* .. cursor.* + 8], .little);
+    const size_bytes = readIntFromSlice(u64, bytes, cursor.*);
     cursor.* += 8;
 
     if (cursor.* + 4 > file_size) return error.InvalidCache;
-    const file_count = std.mem.readInt(u32, bytes[cursor.* .. cursor.* + 4], .little);
+    const file_count = readIntFromSlice(u32, bytes, cursor.*);
     cursor.* += 4;
 
     if (cursor.* + 4 > file_size) return error.InvalidCache;
-    const dir_count = std.mem.readInt(u32, bytes[cursor.* .. cursor.* + 4], .little);
+    const dir_count = readIntFromSlice(u32, bytes, cursor.*);
     cursor.* += 4;
 
     if (cursor.* + 1 > file_size) return error.InvalidCache;
@@ -255,12 +263,18 @@ fn parseRecord(allocator: Allocator, bytes: []const u8, cursor: *usize, file_siz
     };
 }
 
+fn readIntFromSlice(comptime T: type, bytes: []const u8, offset: usize) T {
+    var raw: [@sizeOf(T)]u8 = undefined;
+    std.mem.copyForwards(u8, &raw, bytes[offset .. offset + @sizeOf(T)]);
+    return std.mem.readInt(T, &raw, .little);
+}
+
 fn validateDepthSequence(records: []const CachedEntry) !void {
     if (records.len == 0) return error.InvalidCache;
     if (records[0].depth != 0) return error.InvalidCache;
     if (records[0].path_len != 0) return error.InvalidCache;
 
-    var stack_depths = try std.ArrayList(u8).initCapacity(std.heap.page_allocator, records.len);
+    var stack_depths = try std.array_list.Managed(u8).initCapacity(std.heap.page_allocator, records.len);
     defer stack_depths.deinit();
     try stack_depths.append(records[0].depth);
 
@@ -280,16 +294,16 @@ fn readHeader(bytes: []const u8, cursor: *usize, file_size: usize, out: *types.C
     std.mem.copyForwards(u8, &out.magic, bytes[cursor.* .. cursor.* + 4]);
     cursor.* += 4;
     if (cursor.* + 4 > file_size) return false;
-    out.version = std.mem.readInt(u32, bytes[cursor.* .. cursor.* + 4], .little);
+    out.version = readIntFromSlice(u32, bytes, cursor.*);
     cursor.* += 4;
     if (cursor.* + 8 > file_size) return false;
-    out.timestamp = std.mem.readInt(i64, bytes[cursor.* .. cursor.* + 8], .little);
+    out.timestamp = readIntFromSlice(i64, bytes, cursor.*);
     cursor.* += 8;
     if (cursor.* + 8 > file_size) return false;
-    out.scan_duration_ms = std.mem.readInt(u64, bytes[cursor.* .. cursor.* + 8], .little);
+    out.scan_duration_ms = readIntFromSlice(u64, bytes, cursor.*);
     cursor.* += 8;
     if (cursor.* + 8 > file_size) return false;
-    out.entry_count = std.mem.readInt(u64, bytes[cursor.* .. cursor.* + 8], .little);
+    out.entry_count = readIntFromSlice(u64, bytes, cursor.*);
     cursor.* += 8;
     return true;
 }
@@ -310,11 +324,11 @@ fn rebuildTree(allocator: Allocator, entries: []const CachedEntry) !*types.Direc
         };
         nodes[idx] = .{
             .node = node,
-            .children = std.ArrayList(*types.DirectoryEntry).init(allocator),
+            .children = try std.array_list.Managed(*types.DirectoryEntry).initCapacity(allocator, 0),
         };
     }
 
-    var parent_stack = std.ArrayList(usize).init(allocator);
+    var parent_stack = try std.array_list.Managed(usize).initCapacity(allocator, 0);
     defer parent_stack.deinit();
     try parent_stack.append(0);
 
@@ -382,9 +396,9 @@ fn formatLogTimestamp(allocator: Allocator, timestamp: i64) ![]const u8 {
     const days = @divFloor(secs, 86_400);
     const remainder = @mod(secs, 86_400);
     const date = formatDateFromDays(days);
-    const hour = remainder / 3600;
-    const minute = (remainder % 3600) / 60;
-    const second = remainder % 60;
+    const hour = @divTrunc(remainder, 3600);
+    const minute = @divTrunc(@mod(remainder, 3600), 60);
+    const second = @mod(remainder, 60);
     return try std.fmt.allocPrint(allocator, "{d:0>4}{d:0>2}{d:0>2}-{d:0>2}{d:0>2}{d:0>2}", .{
         date.year,
         date.month,
@@ -397,16 +411,19 @@ fn formatLogTimestamp(allocator: Allocator, timestamp: i64) ![]const u8 {
 
 fn formatDateFromDays(days: i64) struct { year: i64, month: i64, day: i64 } {
     const z = days + 719468;
-    const era = if (z >= 0) z / 146097 else (z - 146096) / 146097;
+    const era = if (z >= 0) @divTrunc(z, 146097) else @divTrunc(z - 146096, 146097);
     const doe = z - era * 146097;
-    const yoe = (doe - @divFloor(doe, 1460) + @divFloor(doe, 36524) - @divFloor(doe, 146096)) / 365;
+    const yoe = @divTrunc(
+        doe - @divFloor(doe, 1460) + @divFloor(doe, 36524) - @divFloor(doe, 146096),
+        365,
+    );
     const y = yoe + era * 400;
     const doy = doe - (365 * yoe + @divFloor(yoe, 4) - @divFloor(yoe, 100));
-    const mp = (5 * doy + 2) / 153;
-    const d = doy - (153 * mp + 2) / 5 + 1;
+    const mp = @divTrunc(5 * doy + 2, 153);
+    const d = doy - @divTrunc(153 * mp + 2, 5) + 1;
     const m = mp + 3;
     const month = if (m <= 12) m else m - 12;
-    const year = y + (if (m > 12) 1 else 0) + 1970;
+    const year = y + (if (m > 12) @as(i64, 1) else @as(i64, 0)) + @as(i64, 1970);
     return .{ .year = year, .month = month, .day = d };
 }
 
@@ -421,7 +438,7 @@ pub fn evictIfNeeded(allocator: Allocator, config: types.Config) !void {
     const max_bytes = config.max_cache_bytes;
     if (max_bytes == 0) return;
 
-    var candidates = std.ArrayList(EvictionCandidate).init(std.heap.page_allocator);
+    var candidates = try std.array_list.Managed(EvictionCandidate).initCapacity(std.heap.page_allocator, 0);
     defer candidates.deinit();
 
     var it = dir.iterate();

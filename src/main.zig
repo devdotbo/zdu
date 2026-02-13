@@ -48,6 +48,8 @@ fn stderrWriter() std.fs.File.Writer {
 fn run() !u8 {
     var stderr = stderrWriter();
     var stdout = stdoutWriter();
+    defer stderr.interface.flush() catch {};
+    defer stdout.interface.flush() catch {};
 
     var options = parseArgs() catch |err| {
         try printUsage();
@@ -109,7 +111,7 @@ fn run() !u8 {
     };
 
     if (use_cache) {
-        if (cache.readCache(allocator, canonical_path, hash, config)) |cached| {
+        if (cache.readCache(allocator, canonical_path, hash, config) catch null) |cached| {
             result = cached;
             used_cache = true;
             served_from_cache = true;
@@ -131,7 +133,7 @@ fn run() !u8 {
                 config,
                 options.cross_mount,
                 options.verbose,
-            ) catch null) |summary| {
+            )) |summary| {
                 result = summary.result;
                 result.cache_timestamp = null;
                 had_warnings = summary.had_warnings;
@@ -170,7 +172,7 @@ fn run() !u8 {
                     try (&stderr.interface).print("background refresh not started\n", .{});
                 }
             }
-        } else |_| {
+        } else {
             if (options.verbose) {
                 try (&stderr.interface).print("[DEBUG] cache miss for {s}\n", .{canonical_path});
             }
@@ -182,7 +184,10 @@ fn run() !u8 {
             allocator,
             canonical_path,
             options.cross_mount,
-            .{ .verbose = options.verbose },
+            .{
+                .cross_mount = options.cross_mount,
+                .verbose = options.verbose,
+            },
         );
         result = scan.result;
         had_warnings = scan.had_warnings;
@@ -232,6 +237,8 @@ fn run() !u8 {
 fn runSessionCommands(options: *const CliOptions, allocator: Allocator, config: types.Config) !u8 {
     var stdout = stdoutWriter();
     var stderr = stderrWriter();
+    defer stdout.interface.flush() catch {};
+    defer stderr.interface.flush() catch {};
 
     if (options.sessions) {
         const sessions = try ipc.queryAllSessions(allocator, config);
@@ -534,7 +541,7 @@ fn detectStaleSubtrees(
     current: []const types.GencountRecord,
     previous: []const types.GencountRecord,
 ) ![][]const u8 {
-    var stale = std.ArrayList([]const u8).init(allocator);
+    var stale = try std.array_list.Managed([]const u8).initCapacity(allocator, 0);
     var success = false;
     defer if (!success) {
         for (stale.items) |entry| allocator.free(entry);
@@ -574,7 +581,7 @@ fn detectStaleSubtrees(
         }
     }.lessThan);
 
-    var stale_output = try std.ArrayList([]const u8).initCapacity(allocator, stale.items.len);
+    var stale_output = try std.array_list.Managed([]const u8).initCapacity(allocator, stale.items.len);
     for (stale.items) |candidate| {
         if (isEmptyPath(candidate)) {
             stale_output.clearRetainingCapacity();
@@ -749,6 +756,7 @@ fn now() u64 {
 
 fn printUsage() !void {
     var writer = stdoutWriter();
+    defer writer.interface.flush() catch {};
     const defaults = types.Config.defaults();
     try (&writer.interface).print(
         \\Usage: zigdu [options] [path]

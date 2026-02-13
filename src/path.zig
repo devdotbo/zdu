@@ -23,7 +23,7 @@ pub fn canonicalize(allocator: Allocator, input_path: []const u8) ![]const u8 {
         break :blk try std.fs.cwd().realpathAlloc(allocator, joined);
     };
 
-    if (!std.unicode.utf8Validate(resolved)) {
+    if (!std.unicode.utf8ValidateSlice(resolved)) {
         allocator.free(resolved);
         return error.InvalidUtf8;
     }

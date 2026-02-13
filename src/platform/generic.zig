@@ -3,6 +3,7 @@ const builtin = @import("builtin");
 const types = @import("../types.zig");
 const darwin = @import("darwin.zig");
 const linux = @import("linux.zig");
+const Allocator = std.mem.Allocator;
 
 pub const DirEntryKind = enum(u8) {
     file,
@@ -34,13 +35,13 @@ pub fn openDirIterator(allocator: std.mem.Allocator, path: []const u8) !DirItera
     return if (builtin.os.tag == .macos) try darwin.openDirIterator(allocator, path) else try linux.openDirIterator(allocator, path);
 }
 
-pub fn getVolumeInfo(path: []const u8) !types.VolumeInfo {
-    return if (builtin.os.tag == .macos) try darwin.getVolumeInfo(path) else try linux.getVolumeInfo(path);
+pub fn getVolumeInfo(allocator: Allocator, path: []const u8) !types.VolumeInfo {
+    return if (builtin.os.tag == .macos) try darwin.getVolumeInfo(allocator, path) else try linux.getVolumeInfo(allocator, path);
 }
 
-pub fn getRecursiveGencount(path: []const u8) !?u64 {
+pub fn getRecursiveGencount(allocator: Allocator, path: []const u8) !?u64 {
     if (builtin.os.tag == .macos) {
-        return try darwin.getRecursiveGencount(path);
+        return try darwin.getRecursiveGencount(allocator, path);
     }
     return null;
 }

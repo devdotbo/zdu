@@ -14,18 +14,18 @@ pub const DirEntry = struct {
 };
 
 pub const DirIterator = struct {
-    iterable: std.fs.IterableDir,
-    iterator: std.fs.IterableDir.Iterator,
+    dir: std.fs.Dir,
+    iterator: std.fs.Dir.Iterator,
     allocator: std.mem.Allocator,
 
     pub fn next(self: *DirIterator) !?DirEntry {
         const entry = try self.iterator.next() orelse return null;
 
         var size: u64 = 0;
-        const stat = self.iterable.dir.statFile(entry.name) catch null;
+        const stat = self.dir.statFile(entry.name) catch null;
         if (stat) |entry_stat| {
             size = switch (entry_stat.kind) {
-                .file, .character_device, .block_device, .named_pipe, .unix_domain_socket, .symbolic_link => entry_stat.size,
+                .file, .character_device, .block_device, .named_pipe, .unix_domain_socket, .sym_link => entry_stat.size,
                 else => 0,
             };
         }
@@ -39,22 +39,25 @@ pub const DirIterator = struct {
     }
 
     pub fn deinit(self: *DirIterator) void {
-        self.iterable.close();
+        self.dir.close();
     }
 };
 
 pub fn openDirIterator(allocator: std.mem.Allocator, path: []const u8) !DirIterator {
-    const iterable = try std.fs.cwd().openIterableDir(path, .{});
+    const dir = try std.fs.cwd().openDir(path, .{ .iterate = true });
     return .{
-        .iterable = iterable,
-        .iterator = iterable.iterate(),
+        .dir = dir,
+        .iterator = dir.iterate(),
         .allocator = allocator,
     };
 }
 
-pub fn getVolumeInfo(path: []const u8) !types.VolumeInfo {
+pub fn getVolumeInfo(allocator: std.mem.Allocator, path: []const u8) !types.VolumeInfo {
+    _ = allocator;
     var fs = std.mem.zeroes(std.c.statvfs_t);
-    if (std.c.statvfs(path.ptr, &fs) != 0) {
+    const path_buf = try std.heap.page_allocator.dupeZ(u8, path);
+    defer std.heap.page_allocator.free(path_buf);
+    if (std.c.statvfs(path_buf, &fs) != 0) {
         return error.StatFSFailed;
     }
 

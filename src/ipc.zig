@@ -54,16 +54,13 @@ const ResultUnavailablePayload = struct {
 pub fn startServer(context: *ServerContext) !void {
     std.fs.cwd().deleteFile(context.socket_path) catch {};
 
-    const address = try unixAddress(context.allocator, context.socket_path);
-    defer context.allocator.free(address.path_storage);
+    const address = try std.net.Address.initUnix(context.socket_path);
 
     const listener = try std.posix.socket(c.AF_UNIX, c.SOCK_STREAM, 0);
     defer std.posix.close(listener);
 
-    if (c.bind(listener, @ptrCast(&address.addr), @intCast(address.len)) != 0) {
-        return error.BindFailed;
-    }
-    try std.posix.chmod(context.socket_path, 0o600);
+    try std.posix.bind(listener, &address.any, address.getOsSockLen());
+    try std.posix.fchmod(listener, 0o600);
     if (c.listen(listener, 16) != 0) return error.ListenFailed;
 
     while (true) {
@@ -102,7 +99,7 @@ pub fn startServer(context: *ServerContext) !void {
             }
             try sendJson(client, CancelPayload{
                 .status = status,
-                .pid = std.posix.getpid(),
+                .pid = @intCast(std.c.getpid()),
                 .path = context.path,
             });
             continue;
@@ -126,10 +123,10 @@ pub fn sendCommand(allocator: Allocator, socket_path: []const u8, command: []con
     const fd = try connectSocket(allocator, socket_path);
     defer std.posix.close(fd);
 
-    try writeAll(fd, command);
-    try writeAll(fd, "\n");
+    _ = try writeAll(fd, command);
+    _ = try writeAll(fd, "\n");
 
-    var response = std.ArrayList(u8).init(allocator);
+    var response = std.array_list.Managed(u8).init(allocator);
     defer response.deinit();
 
     var buffer: [512]u8 = undefined;
@@ -232,7 +229,8 @@ pub fn resolveSocketPathByPid(allocator: Allocator, config: types.Config, target
         if (pid != target_pid) continue;
 
         const stem = std.fs.path.stem(entry.name);
-        return try cache.sockFilePath(allocator, config.cache_dir, stem);
+        const socket = try cache.sockFilePath(allocator, config.cache_dir, stem);
+        return try allocator.dupe(u8, socket);
     }
 
     return null;
@@ -250,7 +248,7 @@ fn sendStatus(context: *ServerContext, fd: c_int) !void {
 
     try sendJson(fd, StatusPayload{
         .path = context.path,
-        .pid = std.posix.getpid(),
+        .pid = @intCast(std.c.getpid()),
         .status = status_text,
         .start_time = start_time,
         .elapsed_seconds = @intCast(elapsed),
@@ -263,7 +261,7 @@ fn sendStatus(context: *ServerContext, fd: c_int) !void {
 
 fn buildResultResponse(context: *ServerContext) ![]u8 {
     while (!context.state.complete.load(.acquire)) {
-        std.time.sleep(50_000_000);
+        std.Thread.sleep(50_000_000);
     }
 
     if (context.state.state.load(.acquire) == @intFromEnum(types.SessionState.err)) {
@@ -271,9 +269,11 @@ fn buildResultResponse(context: *ServerContext) ![]u8 {
             .@"error" = "scan failed",
             .partial_result = null,
         };
-        var out = std.ArrayList(u8).init(context.allocator);
+        var out = std.array_list.Managed(u8).init(context.allocator);
         defer out.deinit();
-        try std.json.stringify(payload, .{}, out.writer());
+        var out_writer = out.writer();
+        var out_adapter = out_writer.adaptToNewApi(&.{});
+        try std.json.Stringify.value(payload, .{}, &out_adapter.new_interface);
         try out.append('\n');
         return out.toOwnedSlice();
     }
@@ -288,31 +288,51 @@ fn buildResultResponse(context: *ServerContext) ![]u8 {
             .@"error" = "cache read failed",
             .partial_result = null,
         };
-        var out = std.ArrayList(u8).init(context.allocator);
+        var out = std.array_list.Managed(u8).init(context.allocator);
         defer out.deinit();
-        try std.json.stringify(payload, .{}, out.writer());
+        var out_writer = out.writer();
+        var out_adapter = out_writer.adaptToNewApi(&.{});
+        try std.json.Stringify.value(payload, .{}, &out_adapter.new_interface);
         try out.append('\n');
         return out.toOwnedSlice();
     };
+    if (result == null) {
+        const payload = ResultUnavailablePayload{
+            .@"error" = "cache read failed",
+            .partial_result = null,
+        };
+        var out = std.array_list.Managed(u8).init(context.allocator);
+        defer out.deinit();
+        var out_writer = out.writer();
+        var out_adapter = out_writer.adaptToNewApi(&.{});
+        try std.json.Stringify.value(payload, .{}, &out_adapter.new_interface);
+        try out.append('\n');
+        return out.toOwnedSlice();
+    }
+    const scan_result = result.?;
 
-    var out = std.ArrayList(u8).init(context.allocator);
+    var out = std.array_list.Managed(u8).init(context.allocator);
     defer out.deinit();
+    var out_writer = out.writer();
+    var out_adapter = out_writer.adaptToNewApi(&.{});
 
-    const start_time = if (result.cache_timestamp) |ts| ts else result.timestamp;
+    const start_time = if (scan_result.cache_timestamp) |ts| ts else scan_result.timestamp;
     const refresh = output.RefreshInfo{
         .status = "complete",
         .pid = null,
         .estimated_remaining_seconds = null,
     };
-    try output.formatJson(context.allocator, out.writer(), &result, 255, 65535, start_time, refresh);
+    try output.formatJson(context.allocator, &out_adapter.new_interface, &scan_result, 255, 65535, start_time, refresh);
     return out.toOwnedSlice();
 }
 
 fn sendJson(fd: c_int, payload: anytype) !void {
-    var out = std.ArrayList(u8).init(std.heap.page_allocator);
+    var out = try std.array_list.Managed(u8).initCapacity(std.heap.page_allocator, 128);
     defer out.deinit();
 
-    try std.json.stringify(payload, .{}, out.writer());
+    var out_writer = out.writer();
+    var out_adapter = out_writer.adaptToNewApi(&.{});
+    try std.json.Stringify.value(payload, .{}, &out_adapter.new_interface);
     try out.append('\n');
     _ = try writeAll(fd, out.items);
 }
@@ -332,13 +352,13 @@ fn writeAll(fd: c_int, data: []const u8) !usize {
     while (offset < data.len) {
         const written = c.write(fd, data.ptr + offset, data.len - offset);
         if (written <= 0) return error.WriteFailed;
-        offset += @intCast(@as(usize, written));
+        offset += @intCast(written);
     }
     return data.len;
 }
 
 fn readCommand(allocator: Allocator, fd: c_int) ![]u8 {
-    var response = std.ArrayList(u8).init(allocator);
+    var response = std.array_list.Managed(u8).init(allocator);
     var buf: [1]u8 = undefined;
 
     while (true) {
@@ -357,36 +377,10 @@ fn connectSocket(allocator: Allocator, socket_path: []const u8) !c_int {
     const fd = try std.posix.socket(c.AF_UNIX, c.SOCK_STREAM, 0);
     errdefer std.posix.close(fd);
 
-    const address = try unixAddress(std.heap.page_allocator, socket_path);
-    defer std.heap.page_allocator.free(address.path_storage);
+    const address = try std.net.Address.initUnix(socket_path);
 
-    if (c.connect(fd, @ptrCast(&address.addr), @intCast(address.len)) != 0) {
-        return error.ConnectFailed;
-    }
+    std.posix.connect(fd, &address.any, address.getOsSockLen()) catch return error.ConnectFailed;
     return fd;
-}
-
-fn unixAddress(allocator: Allocator, socket_path: []const u8) !struct {
-    addr: c.sockaddr_un,
-    len: usize,
-    path_storage: []u8,
-} {
-    const max_path = @min(107, @sizeOf(c.sockaddr_un.sun_path) - 1);
-    if (socket_path.len > max_path) return error.PathTooLong;
-
-    var path_storage = try allocator.alloc(u8, max_path + 1);
-    @memset(path_storage, 0);
-    std.mem.copyForwards(u8, path_storage, socket_path);
-
-    var addr: c.sockaddr_un = std.mem.zeroes(c.sockaddr_un);
-    addr.sun_family = c.AF_UNIX;
-    std.mem.copyForwards(u8, &addr.sun_path, path_storage[0 .. socket_path.len + 1]);
-
-    return .{
-        .addr = addr,
-        .len = @sizeOf(c.sa_family_t) + socket_path.len + 1,
-        .path_storage = path_storage,
-    };
 }
 
 fn isPidAlive(pid: u32) bool {

@@ -27,11 +27,7 @@ const ScanJson = struct {
     cache_age_seconds: u64,
     scan_duration_ms: u64,
     entry_count: u64,
-    refresh: ?struct {
-        status: []const u8,
-        pid: ?u32,
-        estimated_remaining_seconds: ?u32,
-    },
+    refresh: ?RefreshPayload,
     volume: struct {
         total_bytes: u64,
         used_bytes: u64,
@@ -39,6 +35,12 @@ const ScanJson = struct {
         filesystem: []const u8,
     },
     entries: []const JsonEntry,
+};
+
+const RefreshPayload = struct {
+        status: []const u8,
+        pid: ?u32,
+        estimated_remaining_seconds: ?u32,
 };
 
 pub const StatusJson = struct {
@@ -84,7 +86,7 @@ pub fn formatHumanReadable(
     refresh: ?RefreshInfo,
 ) !void {
     if (cache_timestamp) |ts| {
-        const cache_age = ageHuman(allocator, ts);
+        const cache_age = try ageHuman(allocator, ts);
         const cache_iso = try formatTimestampISO(allocator, ts);
         defer allocator.free(cache_iso);
         defer allocator.free(cache_age);
@@ -174,7 +176,7 @@ pub fn formatHumanReadable(
 
 pub fn formatJson(
     allocator: Allocator,
-    writer: anytype,
+    writer: *std.Io.Writer,
     result: *const types.ScanResult,
     depth_limit: u8,
     top_n: u16,
@@ -189,7 +191,7 @@ pub fn formatJson(
     const entries = try filterEntries(allocator, result.root_entry.children, depth_limit, top_n, result.root_entry.size_bytes);
     defer allocator.free(entries);
 
-    var json_entries = try std.ArrayList(JsonEntry).initCapacity(allocator, entries.len);
+    var json_entries = try std.array_list.Managed(JsonEntry).initCapacity(allocator, entries.len);
     for (entries) |entry| {
         const absolute_path = if (entry.path.len == 0)
             try allocator.dupe(u8, result.path)
@@ -206,7 +208,7 @@ pub fn formatJson(
         });
     }
 
-    const refresh_payload = if (refresh) |session| .{
+    const refresh_payload: ?RefreshPayload = if (refresh) |session| .{
         .status = session.status,
         .pid = session.pid,
         .estimated_remaining_seconds = session.estimated_remaining_seconds,
@@ -228,49 +230,49 @@ pub fn formatJson(
         .entries = json_entries.items,
     };
 
-    try std.json.stringify(payload, .{}, writer);
+    try std.json.Stringify.value(payload, .{}, writer);
     try writer.writeByte('\n');
 }
 
 pub fn formatSessionsJson(
     allocator: Allocator,
-    writer: anytype,
+    writer: *std.Io.Writer,
     sessions: []const StatusJson,
 ) !void {
     _ = allocator;
     const payload = SessionsJson{ .sessions = sessions };
-    try std.json.stringify(payload, .{}, writer);
+    try std.json.Stringify.value(payload, .{}, writer);
     try writer.writeByte('\n');
 }
 
 pub fn formatStatusJson(
     allocator: Allocator,
-    writer: anytype,
+    writer: *std.Io.Writer,
     status: StatusJson,
 ) !void {
     _ = allocator;
-    try std.json.stringify(status, .{}, writer);
+    try std.json.Stringify.value(status, .{}, writer);
     try writer.writeByte('\n');
 }
 
 pub fn formatCancelJson(
     allocator: Allocator,
-    writer: anytype,
+    writer: *std.Io.Writer,
     payload: CancelJson,
 ) !void {
     _ = allocator;
-    try std.json.stringify(payload, .{}, writer);
+    try std.json.Stringify.value(payload, .{}, writer);
     try writer.writeByte('\n');
 }
 
 pub fn formatErrorJson(
     allocator: Allocator,
-    writer: anytype,
+    writer: *std.Io.Writer,
     message: []const u8,
     exit_code: u8,
 ) !void {
     _ = allocator;
-    try std.json.stringify(ErrorJson{ .@"error" = message, .code = exit_code }, .{}, writer);
+    try std.json.Stringify.value(ErrorJson{ .@"error" = message, .code = exit_code }, .{}, writer);
     try writer.writeByte('\n');
 }
 
@@ -293,8 +295,8 @@ fn collectVisibleEntries(
 ) ![]OutputEntry {
     if (depth_limit == 0) return try allocator.alloc(OutputEntry, 0);
     const depth_buckets = @as(usize, depth_limit);
-    const buckets = try allocator.alloc(std.ArrayList(OutputEntry), depth_buckets);
-    for (buckets) |*bucket| bucket.* = std.ArrayList(OutputEntry).init(allocator);
+    const buckets = try allocator.alloc(std.array_list.Managed(OutputEntry), depth_buckets);
+    for (buckets) |*bucket| bucket.* = try std.array_list.Managed(OutputEntry).initCapacity(allocator, 0);
     defer {
         for (buckets) |*bucket| bucket.deinit();
         allocator.free(buckets);
@@ -302,7 +304,7 @@ fn collectVisibleEntries(
 
     try collectBuckets(source, buckets);
 
-    var output = try std.ArrayList(OutputEntry).initCapacity(allocator, 64);
+    var output = try std.array_list.Managed(OutputEntry).initCapacity(allocator, 64);
     for (buckets, 0..) |bucket, depth_idx| {
         if (bucket.items.len == 0) continue;
         sortBySize(bucket.items);
@@ -351,7 +353,7 @@ fn collectVisibleEntries(
 
 fn collectBuckets(
     nodes: []const types.DirectoryEntry,
-    buckets: []std.ArrayList(OutputEntry),
+    buckets: []std.array_list.Managed(OutputEntry),
 ) !void {
     for (nodes) |entry| {
         if (entry.depth > 0 and entry.depth <= buckets.len) {
@@ -421,7 +423,7 @@ fn sortBySize(items: []OutputEntry) void {
 }
 
 fn makeBar(percent: f64) [20]u8 {
-    var bar: [20]u8 = [_]u8{' '};
+    var bar = [_]u8{' '} ** 20;
     bar[0] = '[';
     bar[19] = ']';
     const filled = @min(@as(usize, @intFromFloat((percent / 100.0) * 16.0)), 16);
@@ -439,16 +441,19 @@ fn makeBar(percent: f64) [20]u8 {
 
 fn formatDateFromDays(days: i64) struct { year: i64, month: i64, day: i64 } {
     const z = days + 719468;
-    const era = if (z >= 0) z / 146097 else (z - 146096) / 146097;
+    const era = if (z >= 0) @divTrunc(z, 146097) else @divTrunc(z - 146096, 146097);
     const doe = z - era * 146097;
-    const yoe = (doe - @divFloor(doe, 1460) + @divFloor(doe, 36524) - @divFloor(doe, 146096)) / 365;
+    const yoe = @divTrunc(
+        doe - @divFloor(doe, 1460) + @divFloor(doe, 36524) - @divFloor(doe, 146096),
+        365,
+    );
     const y = yoe + era * 400;
     const doy = doe - (365 * yoe + @divFloor(yoe, 4) - @divFloor(yoe, 100));
-    const mp = (5 * doy + 2) / 153;
-    const d = doy - (153 * mp + 2) / 5 + 1;
+    const mp = @divTrunc(5 * doy + 2, 153);
+    const d = doy - @divTrunc(153 * mp + 2, 5) + 1;
     const m = mp + 3;
     const month = if (m <= 12) m else m - 12;
-    const year = y + (if (m > 12) 1 else 0) + 1970;
+    const year = y + @as(i64, if (m > 12) 1 else 0) + @as(i64, 1970);
     return .{ .year = year, .month = month, .day = d };
 }
 
@@ -458,9 +463,9 @@ pub fn formatTimestampISO(allocator: Allocator, timestamp: i64) ![]u8 {
     const days = @divFloor(secs, 86_400);
     const remainder = @mod(secs, 86_400);
     const date = formatDateFromDays(days);
-    const hour = remainder / 3600;
-    const minute = (remainder % 3600) / 60;
-    const second = remainder % 60;
+    const hour = @divTrunc(remainder, 3600);
+    const minute = @divTrunc(@mod(remainder, 3600), 60);
+    const second = @mod(remainder, 60);
     return try std.fmt.allocPrint(allocator, "{d:0>4}-{d:0>2}-{d:0>2}T{d:0>2}:{d:0>2}:{d:0>2}Z", .{
         date.year,
         date.month,

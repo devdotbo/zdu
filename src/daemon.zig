@@ -76,7 +76,8 @@ fn backgroundMain(
     cross_mount: bool,
     verbose: bool,
 ) !void {
-    const child_pid = std.posix.getpid();
+    var log_buffer: [8192]u8 = undefined;
+    const child_pid = std.c.getpid();
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
@@ -95,7 +96,7 @@ fn backgroundMain(
     var log_file = try std.fs.cwd().createFile(log_path, .{ .truncate = true, .read = false, .mode = 0o600 });
     defer log_file.close();
     try redirectOutput(log_file);
-    const log = log_file.writer();
+    const log = log_file.writer(&log_buffer).interface;
 
     try logLinef(log, "DEBUG", "daemon bootstrap pid={d} path_hash={s} cross_mount={}", .{
         child_pid,
@@ -202,7 +203,9 @@ fn writePidFile(allocator: Allocator, pid_path: []const u8, pid: u32) !void {
         .mode = 0o600,
     });
     defer file.close();
-    try file.writer().print("{d}\n", .{pid});
+    var writer_buffer: [32]u8 = undefined;
+    var writer = file.writer(&writer_buffer);
+    try writer.interface.print("{d}\n", .{pid});
     try std.fs.cwd().rename(tmp_path, pid_path);
 }
 
@@ -229,7 +232,8 @@ fn redirectOutput(file: std.fs.File) !void {
 fn logLine(writer: anytype, level: []const u8, message: []const u8) !void {
     const stamp = try output.formatTimestampISO(std.heap.page_allocator, std.time.timestamp());
     defer std.heap.page_allocator.free(stamp);
-    try writer.print("{s} [{s}] {s}\n", .{ stamp, level, message });
+    var writer_mut = writer;
+    try writer_mut.print("{s} [{s}] {s}\n", .{ stamp, level, message });
 }
 
 fn logLinef(writer: anytype, level: []const u8, comptime format: []const u8, args: anytype) !void {

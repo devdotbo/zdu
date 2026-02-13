@@ -31,7 +31,7 @@ const StackFrame = struct {
     depth: u8,
     node: *types.DirectoryEntry,
     iter: platform.DirIterator,
-    children: std.ArrayList(*types.DirectoryEntry),
+    children: std.array_list.Managed(*types.DirectoryEntry),
     had_permission_warning: bool,
 };
 
@@ -74,13 +74,13 @@ pub fn scanWithProgress(
     }
 
     const active = if (options.progress) |p| p else null;
-    const volume_info = try platform.getVolumeInfo(path);
+    const volume_info = try platform.getVolumeInfo(allocator, path);
     const root_device_id: ?u64 = null;
 
     const root_iter = try platform.openDirIterator(allocator, path);
     const root_node = try createNode(allocator, "", 0);
 
-    var stack = std.ArrayList(StackFrame).init(allocator);
+    var stack = try std.array_list.Managed(StackFrame).initCapacity(allocator, 0);
     defer stack.deinit();
 
     try stack.append(.{
@@ -89,7 +89,7 @@ pub fn scanWithProgress(
         .depth = 0,
         .node = root_node,
         .iter = root_iter,
-        .children = std.ArrayList(*types.DirectoryEntry).init(allocator),
+        .children = try std.array_list.Managed(*types.DirectoryEntry).initCapacity(allocator, 0),
         .had_permission_warning = false,
     });
 
@@ -118,8 +118,8 @@ pub fn scanWithProgress(
         };
 
         if (next_entry == null) {
-            const finished = stack.pop();
-            try finalizeFrameChildren(allocator, &finished);
+            var finished = stack.pop().?;
+            try finalizeFrameChildren(allocator, finished);
             finished.iter.deinit();
 
             if (stack.items.len > 0) {
@@ -129,8 +129,8 @@ pub fn scanWithProgress(
                 parent.node.dir_count += finished.node.dir_count + 1;
                 if (active) |progress| {
                     _ = progress.dirs_scanned.fetchAdd(1, .monotonic);
-                    progress.bytes_scanned.fetchAdd(finished.node.size_bytes, .monotonic);
-                    progress.files_scanned.fetchAdd(finished.node.file_count, .monotonic);
+                    _ = progress.bytes_scanned.fetchAdd(finished.node.size_bytes, .monotonic);
+                    _ = progress.files_scanned.fetchAdd(finished.node.file_count, .monotonic);
                 }
                 if (finished.had_permission_warning) warnings += 1;
             } else {
@@ -149,7 +149,7 @@ pub fn scanWithProgress(
                 frame.node.file_count += 1;
                 if (active) |progress| {
                     _ = progress.files_scanned.fetchAdd(1, .monotonic);
-                    progress.bytes_scanned.fetchAdd(entry.size, .monotonic);
+                    _ = progress.bytes_scanned.fetchAdd(entry.size, .monotonic);
                     updateProgress(progress, volume_info.used_bytes, started_seconds);
                 }
             },
@@ -192,14 +192,14 @@ pub fn scanWithProgress(
                     .depth = frame.depth + 1,
                     .node = child_node,
                     .iter = child_iter,
-                    .children = std.ArrayList(*types.DirectoryEntry).init(allocator),
+                    .children = try std.array_list.Managed(*types.DirectoryEntry).initCapacity(allocator, 0),
                     .had_permission_warning = false,
                 });
                 if (active) |progress| {
                     _ = progress.dirs_scanned.fetchAdd(1, .monotonic);
                 }
             },
-            .symbolic_link => {
+            .sym_link => {
                 if (active) |progress| {
                     _ = progress.errors_count.fetchAdd(1, .monotonic);
                 }
@@ -231,7 +231,7 @@ pub fn scanWithProgress(
         var stderr = stderrWriter();
         try (&stderr.interface).print(
             "[DEBUG] scan: completed {s} duration_ms={d} entries={d} warnings={d}\n",
-            .{ path, duration_ms, warnings },
+            .{ path, duration_ms, count, warnings },
         );
     }
 
@@ -275,7 +275,7 @@ pub fn partialScan(
         });
     }
 
-    var normalized_stale = std.ArrayList([]const u8).init(allocator);
+    var normalized_stale = try std.array_list.Managed([]const u8).initCapacity(allocator, 0);
     defer {
         for (normalized_stale.items) |entry| allocator.free(entry);
         normalized_stale.deinit();
@@ -284,7 +284,7 @@ pub fn partialScan(
     for (_stale_subtrees) |raw_entry| {
         const normalized = try normalizeSubtreePath(allocator, raw_entry);
         if (!hasPath(normalized_stale.items, normalized)) {
-            try normalized_stale.append(allocator.dupe(u8, normalized));
+            try normalized_stale.append(try allocator.dupe(u8, normalized));
         }
         allocator.free(normalized);
     }
@@ -347,7 +347,7 @@ pub fn partialScan(
         });
     }
 
-    var replacements = std.ArrayList(ReplacementSubtree).init(allocator);
+    var replacements = try std.array_list.Managed(ReplacementSubtree).initCapacity(allocator, 0);
     defer replacements.deinit();
 
     var had_warnings = false;
@@ -372,12 +372,13 @@ pub fn partialScan(
         });
     }
 
-    const merged_root = try mergeSubtrees(allocator, cached.result.root_entry, replacements.items);
+    const baseline = cached.?; 
+    const merged_root = try mergeSubtrees(allocator, baseline.root_entry, replacements.items);
     const result = types.ScanResult{
-        .path = cached.result.path,
+        .path = baseline.path,
         .timestamp = std.time.timestamp(),
-        .duration_ms = cached.result.duration_ms,
-        .volume_info = cached.result.volume_info,
+        .duration_ms = baseline.duration_ms,
+        .volume_info = baseline.volume_info,
         .root_entry = merged_root.node,
         .entry_count = countEntries(merged_root.node),
     };
@@ -464,10 +465,10 @@ fn relocateSubtree(
 
     if (node.children.len == 0) return new_node;
 
-    var children = std.ArrayList(types.DirectoryEntry).init(allocator);
+    var children = try std.array_list.Managed(types.DirectoryEntry).initCapacity(allocator, 0);
     defer children.deinit();
 
-    for (node.children) |entry| {
+    for (node.children) |*entry| {
         const child = try relocateSubtree(allocator, entry, relocated_path, relocated_depth);
         try children.append(child.*);
     }
@@ -485,14 +486,14 @@ fn mergeSubtrees(
         return .{ .node = replacement, .changed = true };
     }
 
-    var merged_children = std.ArrayList(types.DirectoryEntry).init(allocator);
+    var merged_children = try std.array_list.Managed(types.DirectoryEntry).initCapacity(allocator, 0);
 
     var out_size = base.size_bytes;
     var out_file_count = base.file_count;
     var out_dir_count = base.dir_count;
     var changed = false;
 
-    for (base.children) |child| {
+    for (base.children) |*child| {
         const merged_child = try mergeSubtrees(allocator, child, replacements);
         try merged_children.append(merged_child.node.*);
 
@@ -522,11 +523,11 @@ fn mergeSubtrees(
     }
 
     const merged = try allocator.create(types.DirectoryEntry);
-    const merged_children_items = if (merged_children.items.len == 0) blk: {
+    const merged_children_items: []types.DirectoryEntry = if (merged_children.items.len == 0) blk: {
         merged_children.deinit();
-        break :blk &EMPTY_CHILDREN;
+        break :blk @constCast(&EMPTY_CHILDREN);
     } else blk: {
-        break :blk try merged_children.toOwnedSlice();
+        break :blk @constCast(try merged_children.toOwnedSlice());
     };
 
     merged.* = .{
@@ -563,7 +564,7 @@ fn createNode(allocator: Allocator, path: []const u8, depth: u8) !*types.Directo
     return node;
 }
 
-fn finalizeFrameChildren(allocator: Allocator, frame: *StackFrame) !void {
+fn finalizeFrameChildren(allocator: Allocator, frame: StackFrame) !void {
     if (frame.children.items.len == 0) {
         frame.node.children = &EMPTY_CHILDREN;
         frame.children.deinit();
