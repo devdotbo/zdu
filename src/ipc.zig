@@ -1,17 +1,10 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const types = @import("./types.zig");
 const cache = @import("./cache.zig");
 const output = @import("./output.zig");
 
 const Allocator = std.mem.Allocator;
-
-const c = @cImport({
-    @cInclude("sys/types.h");
-    @cInclude("sys/socket.h");
-    @cInclude("sys/un.h");
-    @cInclude("poll.h");
-    @cInclude("unistd.h");
-});
 
 const StatusPayload = struct {
     path: []const u8,
@@ -56,28 +49,26 @@ pub fn startServer(context: *ServerContext) !void {
 
     const address = try std.net.Address.initUnix(context.socket_path);
 
-    const listener = try std.posix.socket(c.AF_UNIX, c.SOCK_STREAM, 0);
+    const listener = try std.posix.socket(std.posix.AF.UNIX, std.posix.SOCK.STREAM, 0);
     defer std.posix.close(listener);
 
     try std.posix.bind(listener, &address.any, address.getOsSockLen());
-    try std.posix.fchmod(listener, 0o600);
-    if (c.listen(listener, 16) != 0) return error.ListenFailed;
+    std.posix.fchmod(listener, 0o600) catch {};
+    try std.posix.listen(listener, 16);
 
     while (true) {
         const is_complete = context.state.complete.load(.acquire);
-        const timeout: c_int = if (is_complete) 250 else -1;
+        const timeout: i32 = if (is_complete) 250 else -1;
 
-        var pfd = [_]c.pollfd{.{ .fd = listener, .events = c.POLLIN, .revents = 0 }};
-        const ready = c.poll(&pfd, 1, timeout);
-        if (ready < 0) return error.PollFailed;
+        var pfd = [_]std.posix.pollfd{.{ .fd = listener, .events = std.posix.POLL.IN, .revents = 0 }};
+        const ready = try std.posix.poll(&pfd, timeout);
         if (ready == 0) {
             if (context.state.complete.load(.acquire)) break;
             continue;
         }
 
-        const client = c.accept(listener, null, null);
-        if (client < 0) return error.AcceptFailed;
-        defer _ = c.close(client);
+        const client = try std.posix.accept(listener, null, null);
+        defer std.posix.close(client);
 
         const command = readCommand(context.allocator, client) catch continue;
         defer context.allocator.free(command);
@@ -89,17 +80,17 @@ pub fn startServer(context: *ServerContext) !void {
         }
 
         if (std.mem.eql(u8, command, "cancel")) {
-            const complete = context.state.complete.load(.acquire);
-            const status = if (complete) "already_complete" else "cancelled";
-            if (!complete) {
-                context.state.cancel_requested.store(true, .release);
-                if (context.state.state.load(.acquire) != @intFromEnum(types.SessionState.done)) {
-                    context.state.state.store(@intFromEnum(types.SessionState.err), .release);
+                const complete = context.state.complete.load(.acquire);
+                const status = if (complete) "already_complete" else "cancelled";
+                if (!complete) {
+                    context.state.cancel_requested.store(true, .release);
+                    if (context.state.state.load(.acquire) != @intFromEnum(types.SessionState.done)) {
+                        context.state.state.store(@intFromEnum(types.SessionState.err), .release);
+                    }
                 }
-            }
-            try sendJson(client, CancelPayload{
+        try sendJson(client, CancelPayload{
                 .status = status,
-                .pid = @intCast(std.c.getpid()),
+                .pid = currentPid(),
                 .path = context.path,
             });
             continue;
@@ -236,7 +227,7 @@ pub fn resolveSocketPathByPid(allocator: Allocator, config: types.Config, target
     return null;
 }
 
-fn sendStatus(context: *ServerContext, fd: c_int) !void {
+fn sendStatus(context: *ServerContext, fd: std.posix.fd_t) !void {
     const now = std.time.timestamp();
     const elapsed = if (now > context.start_time) now - context.start_time else 0;
     const snapshot = context.state.snapshot(now);
@@ -248,7 +239,7 @@ fn sendStatus(context: *ServerContext, fd: c_int) !void {
 
     try sendJson(fd, StatusPayload{
         .path = context.path,
-        .pid = @intCast(std.c.getpid()),
+        .pid = currentPid(),
         .status = status_text,
         .start_time = start_time,
         .elapsed_seconds = @intCast(elapsed),
@@ -326,7 +317,7 @@ fn buildResultResponse(context: *ServerContext) ![]u8 {
     return out.toOwnedSlice();
 }
 
-fn sendJson(fd: c_int, payload: anytype) !void {
+fn sendJson(fd: std.posix.fd_t, payload: anytype) !void {
     var out = try std.array_list.Managed(u8).initCapacity(std.heap.page_allocator, 128);
     defer out.deinit();
 
@@ -337,33 +328,33 @@ fn sendJson(fd: c_int, payload: anytype) !void {
     _ = try writeAll(fd, out.items);
 }
 
-fn sendRaw(fd: c_int, data: []const u8) !void {
+fn sendRaw(fd: std.posix.fd_t, data: []const u8) !void {
+    const fd_arg = fd;
     if (std.mem.endsWith(u8, data, "\n")) {
-        _ = try writeAll(fd, data);
+        _ = try writeAll(fd_arg, data);
     } else {
         const with_newline = try std.fmt.allocPrint(std.heap.page_allocator, "{s}\n", .{data});
         defer std.heap.page_allocator.free(with_newline);
-        _ = try writeAll(fd, with_newline);
+        _ = try writeAll(fd_arg, with_newline);
     }
 }
 
-fn writeAll(fd: c_int, data: []const u8) !usize {
+fn writeAll(fd: std.posix.fd_t, data: []const u8) !usize {
     var offset: usize = 0;
     while (offset < data.len) {
-        const written = c.write(fd, data.ptr + offset, data.len - offset);
-        if (written <= 0) return error.WriteFailed;
-        offset += @intCast(written);
+        const written = try std.posix.write(fd, data[offset..]);
+        if (written == 0) return error.WriteFailed;
+        offset += written;
     }
     return data.len;
 }
 
-fn readCommand(allocator: Allocator, fd: c_int) ![]u8 {
+fn readCommand(allocator: Allocator, fd: std.posix.fd_t) ![]u8 {
     var response = std.array_list.Managed(u8).init(allocator);
     var buf: [1]u8 = undefined;
 
     while (true) {
-        const n = c.read(fd, &buf, 1);
-        if (n < 0) return error.ReadFailed;
+        const n = try std.posix.read(fd, buf[0..]);
         if (n == 0) break;
         if (buf[0] == '\n') break;
         try response.append(buf[0]);
@@ -372,15 +363,22 @@ fn readCommand(allocator: Allocator, fd: c_int) ![]u8 {
     return response.toOwnedSlice();
 }
 
-fn connectSocket(allocator: Allocator, socket_path: []const u8) !c_int {
+fn connectSocket(allocator: Allocator, socket_path: []const u8) !std.posix.fd_t {
     _ = allocator;
-    const fd = try std.posix.socket(c.AF_UNIX, c.SOCK_STREAM, 0);
+    const fd = try std.posix.socket(std.posix.AF.UNIX, std.posix.SOCK.STREAM, 0);
     errdefer std.posix.close(fd);
 
     const address = try std.net.Address.initUnix(socket_path);
 
-    std.posix.connect(fd, &address.any, address.getOsSockLen()) catch return error.ConnectFailed;
+    try std.posix.connect(fd, &address.any, address.getOsSockLen());
     return fd;
+}
+
+fn currentPid() u32 {
+    return switch (builtin.os.tag) {
+        .linux => @intCast(std.os.linux.getpid()),
+        else => @intCast(std.c.getpid()),
+    };
 }
 
 fn isPidAlive(pid: u32) bool {

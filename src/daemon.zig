@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const types = @import("./types.zig");
 const cache = @import("./cache.zig");
 const scanner = @import("./scanner.zig");
@@ -7,10 +8,6 @@ const ipc = @import("./ipc.zig");
 const output = @import("./output.zig");
 
 const Allocator = std.mem.Allocator;
-
-const c = @cImport({
-    @cInclude("unistd.h");
-});
 
 pub fn isDuplicate(
     allocator: Allocator,
@@ -48,7 +45,7 @@ pub fn spawnBackground(
     if (pid > 0) return @intCast(pid);
     if (pid < 0) return error.ForkFailed;
 
-    if (c.setsid() < 0) std.process.exit(1);
+    std.posix.setsid() catch std.process.exit(1);
 
     backgroundMain(path, path_hash, config, cross_mount, verbose) catch {};
     std.process.exit(0);
@@ -77,7 +74,7 @@ fn backgroundMain(
     verbose: bool,
 ) !void {
     var log_buffer: [8192]u8 = undefined;
-    const child_pid = std.c.getpid();
+    const child_pid = currentPid();
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
@@ -167,7 +164,7 @@ fn backgroundMain(
     cache.writeCache(allocator, path_hash, &summary.result, config) catch |err| {
         state.state.store(@intFromEnum(types.SessionState.err), .release);
         state.complete.store(true, .release);
-        try logLinef(log, "ERROR", "cache write failed: {s}", .{@errorName(err)});
+    try logLinef(log, "ERROR", "cache write failed: {s}", .{@errorName(err)});
         return;
     };
 
@@ -191,6 +188,13 @@ fn backgroundMain(
     state.estimated_remaining_seconds.store(0, .release);
     state.complete.store(true, .release);
     try logLine(log, "INFO", "scan complete");
+}
+
+fn currentPid() u32 {
+    return switch (builtin.os.tag) {
+        .linux => @intCast(std.os.linux.getpid()),
+        else => @intCast(std.c.getpid()),
+    };
 }
 
 fn writePidFile(allocator: Allocator, pid_path: []const u8, pid: u32) !void {

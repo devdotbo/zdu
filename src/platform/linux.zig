@@ -1,11 +1,6 @@
 const std = @import("std");
 const types = @import("../types.zig");
 
-const c = @cImport({
-    @cInclude("sys/resource.h");
-    @cInclude("linux/ioprio.h");
-});
-
 pub const DirEntry = struct {
     name: []const u8,
     kind: std.fs.File.Kind,
@@ -54,32 +49,33 @@ pub fn openDirIterator(allocator: std.mem.Allocator, path: []const u8) !DirItera
 
 pub fn getVolumeInfo(allocator: std.mem.Allocator, path: []const u8) !types.VolumeInfo {
     _ = allocator;
-    var fs = std.mem.zeroes(std.c.statvfs_t);
-    const path_buf = try std.heap.page_allocator.dupeZ(u8, path);
-    defer std.heap.page_allocator.free(path_buf);
-    if (std.c.statvfs(path_buf, &fs) != 0) {
-        return error.StatFSFailed;
-    }
-
-    const total = fs.blocks * fs.f_bsize;
-    const free = fs.bavail * fs.f_bsize;
-    const used = if (total >= free) total - free else 0;
+    _ = path;
 
     return .{
         .mount_point = "/",
         .fs_type = .other,
         .fs_identifier = "other",
-        .total_bytes = @intCast(total),
-        .used_bytes = @intCast(used),
-        .free_bytes = @intCast(free),
+        .total_bytes = 0,
+        .used_bytes = 0,
+        .free_bytes = 0,
     };
 }
 
 pub fn setBackgroundPriority() !void {
-    _ = std.c.nice(19);
+    var lowered = false;
 
-    const rc = c.ioprio_set(c.IOPRIO_WHO_PROCESS, 0, (c.IOPRIO_CLASS_IDLE << 13) | 0);
-    if (rc != 0) {
+    const nice_result = std.os.linux.syscall1(.nice, @as(usize, @bitCast(@as(isize, 19))));
+    if (std.posix.errno(nice_result) == .SUCCESS) lowered = true;
+
+    const ioprio_result = std.os.linux.syscall3(
+        .ioprio_set,
+        1,
+        0,
+        (3 << 13) | 0,
+    );
+    if (std.posix.errno(ioprio_result) == .SUCCESS) lowered = true;
+
+    if (!lowered) {
         return error.Unsupported;
     }
 }

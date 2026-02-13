@@ -26,8 +26,8 @@ Last updated: 2026-02-13
 
 ## To-do (source of truth)
 
-- [ ] T032 loop item A: remove remaining libc-headers/cimport path in platform-dependent code (`src/ipc.zig`, `src/daemon.zig`, `src/platform/linux.zig`)
-- [ ] T032 loop item B: fix background socket setup so daemon sessions no longer panic on socket permission adjustment
+- [x] T032 loop item A: remove remaining libc-headers/cimport path in platform-dependent code (`src/ipc.zig`, `src/daemon.zig`, `src/platform/linux.zig`)
+- [x] T032 loop item B: fix background socket setup so daemon sessions no longer panic on socket permission adjustment
 - [ ] T032 loop item C: rerun SC-006 and record definitive result (or explicitly document platform-blocked SKIP)
 - [ ] T032 loop item D: capture deterministic `SC-004`/`SC-005` evidence on APFS-capable host
 - [ ] T032 loop item E: if needed, improve warm latency to hit `< 50ms` target and re-measure
@@ -43,3 +43,5 @@ Last updated: 2026-02-13
 
 1. 2026-02-13 — baseline validation report generated; `SC-006` flagged due missing libc cross-compile headers.
 2. 2026-02-13 — `T031` recorded as PASS and `T032` moved to IN PROGRESS with six scenario statuses.
+3. 2026-02-13 — completed T032 loop items A and B; removed `@cImport` usage in `src/ipc.zig`, `src/daemon.zig`, and `src/platform/linux.zig`, made socket permission setup non-fatal.
+4. 2026-02-13 — aligned PID reporting in IPC/daemon with libc-free Linux path via `std.os.linux.getpid()` and retained libc-backed fallback for non-Linux.

@@ -217,6 +217,13 @@ Primary contracts: `specs/001-zigdu-core/contracts/cli.md`, `specs/001-zigdu-cor
 - Cross-compile (`SC-006`) `zig build -Dtarget=x86_64-linux`
   - Exit: `1`
   - Failure: libc headers missing (`sys/types.h`) during C import in `src/ipc.zig` cross target.
+- 2026-02-13 follow-up loop:
+  - Implementation updates applied:
+    - `src/ipc.zig`: removed `@cImport` path usage and made socket setup `fchmod` best-effort.
+    - `src/daemon.zig`: removed `@cImport("unistd.h")` and switched to `std.posix.setsid()`.
+    - `src/platform/linux.zig`: removed `@cImport` usage and replaced background priority with syscall-based implementation.
+    - `src/ipc.zig` + `src/daemon.zig` now use `std.os.linux.getpid()` on Linux and fallback `std.c.getpid()` on non-Linux.
+  - Validation status: not yet rerun after patch; remaining tasks are re-run commands and environment evidence.
 
 ## Completion status
 
