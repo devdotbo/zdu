@@ -1,7 +1,16 @@
 # zigdu
 
-`zigdu` is a small Zig-native CLI that scans directory trees and keeps results warm in a local cache.  
-It can return fast cached output, then refresh in the background without blocking the foreground command.
+`zigdu` is an agentic-first, AI-friendly Zig CLI for scanning directory trees with a warm cache.
+It is designed to support autonomous workflows: fast, repeatable storage inspection with machine-readable outputs,
+plus background refresh and session controls that are easy to automate.
+`zigdu` scans directory trees and keeps results warm in a local cache, then returns fast cached output and refreshes in the background without blocking the foreground command.
+
+## Agentic and automation use cases
+
+- schedule periodic health checks across mount points or large trees
+- build agent loops that watch scan drift over time
+- consume JSON for tool routing, alerting, and diagnostics
+- cancel/resume sessions with CLI commands from orchestrators
 
 ## Requirements
 
