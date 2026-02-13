@@ -1,11 +1,11 @@
 # Contract: IPC Protocol
 
-**Scope**: Defines the inter-process communication protocol between the foreground `zigdu` CLI and background scan daemon processes.
+**Scope**: Defines the inter-process communication protocol between the foreground `zdu` CLI and background scan daemon processes.
 
 ## Transport
 
 - **Mechanism**: Unix domain socket (stream type, `AF_UNIX` / `SOCK_STREAM`).
-- **Socket path**: `~/.zigdu/cache/<path-hash>.sock`
+- **Socket path**: `~/.zdu/cache/<path-hash>.sock`
   - `<path-hash>` is a deterministic hash of the canonical absolute real path being scanned, used to uniquely identify sessions per path.
   - The hash function is the same one used for cache file naming.
 - **Lifecycle**: The background process creates the socket on startup and removes it on exit (normal or error). The foreground process connects as a client.
@@ -107,7 +107,7 @@ Each background scan session produces the following files:
 
 ### PID File
 
-- **Path**: `~/.zigdu/cache/<path-hash>.pid`
+- **Path**: `~/.zdu/cache/<path-hash>.pid`
 - **Contents**: The process ID as a decimal ASCII string, followed by a newline. No other content.
 - **Example**: `48291\n`
 - **Lifecycle**: Created atomically (write to temp file, then rename) before the socket is opened. Removed on process exit.
@@ -115,13 +115,13 @@ Each background scan session produces the following files:
 
 ### Socket File
 
-- **Path**: `~/.zigdu/cache/<path-hash>.sock`
+- **Path**: `~/.zdu/cache/<path-hash>.sock`
 - **Lifecycle**: Created by the background process on startup via `bind()`. Removed (unlinked) on process exit.
 - **Purpose**: IPC channel for status queries, cancellation, and result retrieval.
 
 ### Log File
 
-- **Path**: `~/.zigdu/logs/<path-hash>-<timestamp>.log`
+- **Path**: `~/.zdu/logs/<path-hash>-<timestamp>.log`
   - `<timestamp>` format: `YYYYMMDD-HHMMSS` in UTC (e.g., `20260213-142201`).
 - **Contents**: Line-oriented plain text log. Each line is prefixed with an ISO 8601 timestamp and a level tag:
   ```
@@ -139,4 +139,4 @@ The foreground process performs opportunistic cleanup of stale resources:
 
 1. When connecting to a session, first read the PID file and check liveness.
 2. If the PID is not alive, remove both the `.pid` and `.sock` files.
-3. During `--sessions`, enumerate all `.pid` files in `~/.zigdu/cache/`, check liveness for each, and clean up stale entries.
+3. During `--sessions`, enumerate all `.pid` files in `~/.zdu/cache/`, check liveness for each, and clean up stale entries.

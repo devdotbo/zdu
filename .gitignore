@@ -11,7 +11,7 @@ zig-cache/
 .zig-cache/
 build/
 zig-out/
-zigdu
+zdu
 
 # Logs
 *.log

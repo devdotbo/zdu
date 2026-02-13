@@ -1,9 +1,9 @@
-# zigdu Skills Guide
+# zdu Skills Guide
 
 ## Purpose
-Use this file as the operating guide for working on the `zigdu` CLI and its agent-oriented workflows.
+Use this file as the operating guide for working on the `zdu` CLI and its agent-oriented workflows.
 
-## What `zigdu` is
+## What `zdu` is
 - CLI scanner for directory trees with warm cache behavior.
 - Linux/macOS supported (Unix sockets required).
 - Focused on machine-readable outputs and automation hooks (`--json`, `--sessions`, `--status`, `--kill`).
@@ -11,19 +11,19 @@ Use this file as the operating guide for working on the `zigdu` CLI and its agen
 ## Core commands
 - Build: `zig build`
 - Run directly: `zig build run -- [options] [path]`
-- Execute artifact: `./zig-out/bin/zigdu`
+- Execute artifact: `./zig-out/bin/zdu`
 - Tests: `zig build test`
 - Cross-compile smoke command: `zig build -Dtarget=x86_64-linux`
 
 ## Useful CLI usage
-- `zigdu /` scan root
-- `zigdu / --wait` block until a scan completes
-- `zigdu / --force` force a fresh full scan
-- `zigdu / --json` machine output
-- `zigdu / --depth 2 --top 10`
-- `zigdu --sessions`
-- `zigdu --status --path /tmp`
-- `zigdu --kill <PID>`
+- `zdu /` scan root
+- `zdu / --wait` block until a scan completes
+- `zdu / --force` force a fresh full scan
+- `zdu / --json` machine output
+- `zdu / --depth 2 --top 10`
+- `zdu --sessions`
+- `zdu --status --path /tmp`
+- `zdu --kill <PID>`
 
 Exit-code contract:
 - `0` success without warnings
@@ -55,11 +55,11 @@ Exit-code contract:
 - capture relevant log snippets and test results in the report file
 
 ## Data/cache paths
-- Defaults are in `~/.zigdu`:
-  - cache: `cache_dir` (`~/.zigdu/cache` default)
-  - logs: `log_dir` (`~/.zigdu/logs` default)
+- Defaults are in `~/.zdu`:
+  - cache: `cache_dir` (`~/.zdu/cache` default)
+  - logs: `log_dir` (`~/.zdu/logs` default)
 - Important files (path hash based):
-  - cache result `.zgdu`
+  - cache result `.zdu`
   - APFS/HFS+ metadata `.gencount`
   - session pid `.pid`
   - daemon socket `.sock`

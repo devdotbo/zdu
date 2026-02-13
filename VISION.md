@@ -1,4 +1,4 @@
-# zigdu - Fast Disk Usage Scanner with Persistent Cache
+# zdu - Fast Disk Usage Scanner with Persistent Cache
 
 ## Problem
 
@@ -17,17 +17,17 @@ A Zig-native disk usage tool that:
 
 ### Components
 
-1. **zigdu CLI** - the main entry point
-2. **zigdu daemon** - the background scanner process
-3. **Cache store** - on-disk cache of scan results (e.g. `~/.cache/zigdu/`)
+1. **zdu CLI** - the main entry point
+2. **zdu daemon** - the background scanner process
+3. **Cache store** - on-disk cache of scan results (e.g. `~/.cache/zdu/`)
 4. **IPC socket** - Unix domain socket for CLI-to-daemon communication
 
 ### Flow
 
 ```
-User runs: zigdu /
+User runs: zdu /
 
-  1. CLI checks cache at ~/.cache/zigdu/<path-hash>.cache
+  1. CLI checks cache at ~/.cache/zdu/<path-hash>.cache
   2. If cache exists:
      - Print cached results immediately
      - Print cache timestamp and staleness (e.g. "cached 2h 14m ago")
@@ -42,21 +42,21 @@ User runs: zigdu /
 ### CLI Interface
 
 ```
-zigdu <path>              Show cached results, trigger background refresh
-zigdu <path> --wait       Block until scan completes (first run or forced refresh)
-zigdu <path> --force      Discard cache, force full rescan
-zigdu <path> --status     Query running daemon: progress, ETA, PID
-zigdu <path> --top N      Show top N largest directories (default: 20)
-zigdu <path> --depth N    Limit directory tree depth (default: 3)
-zigdu <path> --json       Output as JSON (for agent consumption)
-zigdu --sessions          List all active background scan sessions
-zigdu --kill <pid>        Stop a running scan session
+zdu <path>              Show cached results, trigger background refresh
+zdu <path> --wait       Block until scan completes (first run or forced refresh)
+zdu <path> --force      Discard cache, force full rescan
+zdu <path> --status     Query running daemon: progress, ETA, PID
+zdu <path> --top N      Show top N largest directories (default: 20)
+zdu <path> --depth N    Limit directory tree depth (default: 3)
+zdu <path> --json       Output as JSON (for agent consumption)
+zdu --sessions          List all active background scan sessions
+zdu --kill <pid>        Stop a running scan session
 ```
 
 ### Output Format (default)
 
 ```
-zigdu / - cached results from 2026-02-13 14:22:01 (2h 14m ago)
+zdu / - cached results from 2026-02-13 14:22:01 (2h 14m ago)
 refresh spawned: PID 48291, estimated completion: ~3m 20s
 
 /Users/bioharz          1.2 TB  ########################################
@@ -95,8 +95,8 @@ Total: 1.6 TB used / 1.8 TB (174 GB free)
 ## Session / IPC Model
 
 The daemon is **not** tmux - it is a standalone Zig process that:
-- Writes a PID file to `~/.cache/zigdu/<path-hash>.pid`
-- Listens on a Unix domain socket at `~/.cache/zigdu/<path-hash>.sock`
+- Writes a PID file to `~/.cache/zdu/<path-hash>.pid`
+- Listens on a Unix domain socket at `~/.cache/zdu/<path-hash>.sock`
 - Accepts simple text commands over the socket:
   - `status` - returns progress percentage, files scanned, ETA
   - `cancel` - gracefully stops the scan
@@ -110,7 +110,7 @@ Multiple scans for different paths can run concurrently as separate daemons.
 Binary format for speed, versioned header:
 
 ```
-[4 bytes] magic: "ZGDU"
+[4 bytes] magic: "ZDU0"
 [4 bytes] version
 [8 bytes] timestamp (unix epoch)
 [8 bytes] scan duration (ms)
@@ -156,6 +156,6 @@ Key findings:
 - Watch mode using FSEvents (macOS) / inotify (Linux) to keep cache warm incrementally
 - Delta scans: only rescan directories with mtime newer than last scan
 - TUI mode with interactive drill-down (like ncdu but backed by cache)
-- Remote scan mode: `zigdu ssh://bioharz@192.168.0.48/mnt/data`
+- Remote scan mode: `zdu ssh://bioharz@192.168.0.48/mnt/data`
 - Alerts: notify when free space drops below threshold
 - Integration: MCP tool server so Claude Code can query storage natively

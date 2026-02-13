@@ -1,4 +1,4 @@
-# macOS Native APIs for zigdu
+# macOS Native APIs for zdu
 
 Investigation into macOS/APFS native indexing and filesystem APIs that can accelerate disk usage scanning.
 

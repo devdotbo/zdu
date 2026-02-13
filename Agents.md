@@ -1,6 +1,6 @@
 # Agents Task Ledger (Living)
 
-Scope: `.claude` post-commit validation and completion work for `zigdu`.
+Scope: `.claude` post-commit validation and completion work for `zdu`.
 
 Last updated: 2026-02-13
 
@@ -56,7 +56,7 @@ Last updated: 2026-02-13
 7. 2026-02-13 — fixed scanner entry ownership leak in `src/scanner.zig` by freeing `DirIterator.next()`-allocated names at loop scope boundaries, replacing the background log leak noise seen in debug output.
 8. 2026-02-13 — finalization loop completed:
    - Rebuilt native artifact successfully (`zig build`).
-   - SC-001 warm loop over `/tmp/zigdu-fixture` achieved `real=0.00` on all 5 runs with exit `0`.
+   - SC-001 warm loop over `/tmp/zdu-fixture` achieved `real=0.00` on all 5 runs with exit `0`.
    - SC-004/SC-005 APFS fixtures produced expected `cache gencounts unchanged` and `stale subtrees` markers.
    - SC-006 cross-compile succeeded (`zig build -Dtarget=x86_64-linux`).
    - Fresh logs checked with no `error(gpa)` / `leaked` markers after the leak fix.
@@ -77,7 +77,7 @@ Last updated: 2026-02-13
 
 - `Unix socket pathname limits (verified)`: Linux `sockaddr_un.sun_path` is `108` bytes (`unix(7)`); Darwin `sockaddr_un.sun_path` is `104` bytes (`xnu` `sys/un.h`).
 - `Zig stdlib guard (verified)`: Zig 0.15.2 `std.net.Address.initUnix` returns `error.NameTooLong` when `path.len + 1 > sock_addr.path.len`.
-- `Practical implication for zigdu`: socket paths under `~/.zigdu/cache/` must stay under Darwin's 104-byte limit (including null terminator). Keep this as an explicit portability guard when adjusting path layout.
+- `Practical implication for zdu`: socket paths under `~/.zdu/cache/` must stay under Darwin's 104-byte limit (including null terminator). Keep this as an explicit portability guard when adjusting path layout.
 
 ## Sources
 

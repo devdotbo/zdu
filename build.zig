@@ -6,8 +6,8 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
 
     const exe = b.addExecutable(.{
-        .name = "zigdu",
-        .root_module = b.addModule("zigdu", .{
+        .name = "zdu",
+        .root_module = b.addModule("zdu", .{
             .root_source_file = b.path("src/main.zig"),
             .target = target,
             .optimize = optimize,
@@ -22,11 +22,11 @@ pub fn build(b: *std.Build) void {
         run_cmd.addArgs(args);
     }
 
-    const run_step = b.step("run", "Run zigdu");
+    const run_step = b.step("run", "Run zdu");
     run_step.dependOn(&run_cmd.step);
 
     const unit_tests = b.addTest(.{
-        .root_module = b.addModule("zigdu_tests", .{
+        .root_module = b.addModule("zdu_tests", .{
             .root_source_file = b.path("src/main.zig"),
             .target = target,
             .optimize = optimize,

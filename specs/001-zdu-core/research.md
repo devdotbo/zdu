@@ -1,6 +1,6 @@
-# Research: zigdu - Fast Disk Usage Scanner
+# Research: zdu - Fast Disk Usage Scanner
 
-**Feature Branch**: `001-zigdu-core` | **Date**: 2026-02-13
+**Feature Branch**: `001-zdu-core` | **Date**: 2026-02-13
 
 ## 1. Zig Language Version
 
@@ -62,8 +62,8 @@
 ## 5. IPC and Session Management
 
 - **Decision**: Unix domain sockets via `std.net.Stream` for status queries; PID files for process tracking
-- **Rationale**: Unix domain sockets are the natural IPC mechanism on both platforms. Zig's `std.net` supports them. PID files at `~/.zigdu/cache/<hash>.pid` provide simple process lifecycle tracking.
-- **Socket protocol**: Text-based commands over Unix socket at `~/.zigdu/cache/<hash>.sock`
+- **Rationale**: Unix domain sockets are the natural IPC mechanism on both platforms. Zig's `std.net` supports them. PID files at `~/.zdu/cache/<hash>.pid` provide simple process lifecycle tracking.
+- **Socket protocol**: Text-based commands over Unix socket at `~/.zdu/cache/<hash>.sock`
   - `status` - returns JSON with progress, files scanned, ETA
   - `cancel` - graceful shutdown
   - `result` - current partial/complete results
@@ -80,7 +80,7 @@
 
 - **Decision**: Binary format with `extern struct` header, little-endian integers, variable-length path entries
 - **Rationale**: Binary format achieves the 50ms retrieval target. `extern struct` (not `packed struct`) provides guaranteed field order and C-ABI-compatible layout. Little-endian is native to both target platforms (x86_64 and ARM64).
-- **Header**: 32-byte extern struct (magic "ZGDU", version, timestamp, duration, entry count)
+- **Header**: 32-byte extern struct (magic "ZDU0", version, timestamp, duration, entry count)
 - **Entries**: 2-byte path length + path bytes + 8+4+4+1 = 17 bytes fixed fields
 - **Reading strategy**:
   - Hot path (50ms target): `posix.mmap` with `PROT.READ`, `.TYPE = .PRIVATE`, `MADV.SEQUENTIAL` - zero-copy, no allocation
@@ -91,7 +91,7 @@
 ## 8. LRU Cache Eviction
 
 - **Decision**: Filesystem mtime-based eviction (no separate index file)
-- **Rationale**: Simpler and crash-safe. Update mtime on cache read via `file.updateTimes()`. On cache write, scan `~/.zigdu/cache/*.zgdu`, sort by mtime ascending, delete oldest until total size is under the configured cap (default 1 GB). This runs opportunistically (FR-023).
+- **Rationale**: Simpler and crash-safe. Update mtime on cache read via `file.updateTimes()`. On cache write, scan `~/.zdu/cache/*.zdu`, sort by mtime ascending, delete oldest until total size is under the configured cap (default 1 GB). This runs opportunistically (FR-023).
 - **Alternatives considered**:
   - Separate index.bin file tracking access times - more complex, index can become stale/corrupt
   - In-memory LRU with periodic flush - lost on crash

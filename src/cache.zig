@@ -4,8 +4,8 @@ const platform = @import("./platform/generic.zig");
 
 const Allocator = std.mem.Allocator;
 
-const CACHE_MAGIC = [4]u8{ 'Z', 'G', 'D', 'U' };
-const CACHE_VERSION = 1;
+const CACHE_MAGIC = [4]u8{ 'Z', 'D', 'U', '0' };
+const CACHE_VERSION = 2;
 const GCNT_MAGIC = [4]u8{ 'G', 'C', 'N', 'T' };
 
 const CachedEntry = struct {
@@ -364,7 +364,7 @@ fn rebuildTree(allocator: Allocator, entries: []const CachedEntry) !*types.Direc
 }
 
 pub fn cacheFilePath(allocator: Allocator, cache_dir: []const u8, path_hash: []const u8) ![]const u8 {
-    return try std.fmt.allocPrint(allocator, "{s}/{s}.zgdu", .{ cache_dir, path_hash });
+    return try std.fmt.allocPrint(allocator, "{s}/{s}.zdu", .{ cache_dir, path_hash });
 }
 
 pub fn gencountFilePath(allocator: Allocator, cache_dir: []const u8, path_hash: []const u8) ![]const u8 {
@@ -445,7 +445,7 @@ pub fn evictIfNeeded(allocator: Allocator, config: types.Config) !void {
     var total: u64 = 0;
     while (try it.next()) |entry| {
         if (entry.kind != .file) continue;
-        if (!std.mem.endsWith(u8, entry.name, ".zgdu")) continue;
+        if (!std.mem.endsWith(u8, entry.name, ".zdu")) continue;
 
         const name = try std.fs.path.join(std.heap.page_allocator, &.{ config.cache_dir, entry.name });
         defer std.heap.page_allocator.free(name);

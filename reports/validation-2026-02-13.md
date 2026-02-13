@@ -2,8 +2,8 @@
 
 Date: 2026-02-13  
 Baseline revision: `HEAD` (post-commit)  
-Working directory: `/Users/bioharz/git/zigdu`  
-Primary contracts: `specs/001-zigdu-core/contracts/cli.md`, `specs/001-zigdu-core/contracts/json-output.md`
+Working directory: `<workspace root>`  
+Primary contracts: `specs/001-zdu-core/contracts/cli.md`, `specs/001-zdu-core/contracts/json-output.md`
 
 ## Validation scope
 
@@ -21,13 +21,13 @@ Primary contracts: `specs/001-zigdu-core/contracts/cli.md`, `specs/001-zigdu-cor
 
 ### P001 baseline
 - [ ] Build: `zig build`
-  - Expected: exit code `0`, artifact at `zig-out/bin/zigdu`
-  - Evidence: command output + `ls zig-out/bin/zigdu`
+  - Expected: exit code `0`, artifact at `zig-out/bin/zdu`
+  - Evidence: command output + `ls zig-out/bin/zdu`
 
 ### P002 human and JSON foreground scans
-- [ ] `./zig-out/bin/zigdu /tmp --wait`
+- [ ] `./zig-out/bin/zdu /tmp --wait`
   - Verify exit `0` and human output includes scan header + `volume` footer
-- [ ] `./zig-out/bin/zigdu /tmp --json --wait`
+- [ ] `./zig-out/bin/zdu /tmp --json --wait`
   - Verify output is valid JSON:
     - `python3 -c 'import sys, json; data=json.load(sys.stdin); print(data["path"]); print(data["refresh"]["status"]);'`
   - Verify required top-level keys exist and are type-correct:
@@ -41,9 +41,9 @@ Primary contracts: `specs/001-zigdu-core/contracts/cli.md`, `specs/001-zigdu-cor
     - `refresh` object
 
 ### P003 cache warm behavior
-- [ ] `./zig-out/bin/zigdu /tmp`
+- [ ] `./zig-out/bin/zdu /tmp`
   - Verify exit `0`, cache path indicator is present, and wall time is low (capture `time`)
-- [ ] `./zig-out/bin/zigdu /tmp --json`
+- [ ] `./zig-out/bin/zdu /tmp --json`
   - Verify strict JSON output with `python3 -m json.tool` (or `jq`)
 
 ### P004 test/build quality
@@ -51,22 +51,22 @@ Primary contracts: `specs/001-zigdu-core/contracts/cli.md`, `specs/001-zigdu-cor
 - [ ] Verify all inline tests pass (no regressions)
 
 ### P005 CLI contract checks
-- [ ] `./zig-out/bin/zigdu --help`
+- [ ] `./zig-out/bin/zdu --help`
   - Validate all flags from `cli.md` are present and no scan attempt occurs
-- [ ] `./zig-out/bin/zigdu --version`
-  - Verify format `zigdu <semver>`
-- [ ] `./zig-out/bin/zigdu /tmp --sessions`
+- [ ] `./zig-out/bin/zdu --version`
+  - Verify format `zdu <semver>`
+- [ ] `./zig-out/bin/zdu /tmp --sessions`
   - Human and `--json` forms both valid and non-crashing when no active sessions
-- [ ] `./zig-out/bin/zigdu /tmp --status`
-- [ ] `./zig-out/bin/zigdu --kill <pid>` (only when session exists)
+- [ ] `./zig-out/bin/zdu /tmp --status`
+- [ ] `./zig-out/bin/zdu --kill <pid>` (only when session exists)
   - Validate success/error behavior is contract-aligned and JSON path emits `formatErrorJson` on failures
 
 ## T032 Performance + Platform Gates
 
 ### P006 cold vs cached latency
 - [x] **SC-001**: cache retrieval latency (<50ms target)
-  - Warm cache with: `./zig-out/bin/zigdu /tmp --force --wait`
-  - Run at least 5 warm runs: `./usr/bin/time -p ./zig-out/bin/zigdu /tmp`
+  - Warm cache with: `./zig-out/bin/zdu /tmp --force --wait`
+  - Run at least 5 warm runs: `./usr/bin/time -p ./zig-out/bin/zdu /tmp`
   - Record min/median/p99 and median `< 0.05s` in final log
 - [ ] **SC-002**: cold scan baseline
   - Run stable large directory scan with `--force --wait`
@@ -74,8 +74,8 @@ Primary contracts: `specs/001-zigdu-core/contracts/cli.md`, `specs/001-zigdu-cor
 
 ### P007 memory and resource checks
 - [x] **SC-003**: RSS
-  - macOS: `/usr/bin/time -l ./zig-out/bin/zigdu <path> --wait`
-  - Linux: `/usr/bin/time -v ./zig-out/bin/zigdu <path> --wait`
+  - macOS: `/usr/bin/time -l ./zig-out/bin/zdu <path> --wait`
+  - Linux: `/usr/bin/time -v ./zig-out/bin/zdu <path> --wait`
   - Capture peak RSS; target `< 200MB`
 
 ### P008 APFS optimization checks (macOS/APFS only)
@@ -124,24 +124,24 @@ Primary contracts: `specs/001-zigdu-core/contracts/cli.md`, `specs/001-zigdu-cor
 
 - `zig build`
   - Exit: `0`
-  - Artifact present: `zig-out/bin/zigdu`
+  - Artifact present: `zig-out/bin/zdu`
 
-- `./zig-out/bin/zigdu /tmp --wait`
+- `./zig-out/bin/zdu /tmp --wait`
   - Exit: `2`
   - Output: human scan table printed, volume summary present.
   - Notes: partial warnings from inaccessible paths likely (hence code `2`).
 
-- `./zig-out/bin/zigdu /tmp --json --wait`
+- `./zig-out/bin/zdu /tmp --json --wait`
   - Exit: `2`
   - JSON parse: passed (`json.load` succeeded)
   - Key checks: `path`, `cache_timestamp`, `cache_age_seconds`, `scan_duration_ms`, `entry_count`, `volume`, `entries`, `refresh`
 
-- `./zig-out/bin/zigdu /tmp`
+- `./zig-out/bin/zdu /tmp`
   - Exit: `2`
   - Cache hit observed (`cache:` line)
   - Warm wall time observed: `~0.14–0.17s`
 
-- `./zig-out/bin/zigdu /tmp --json`
+- `./zig-out/bin/zdu /tmp --json`
   - Exit: `2`
   - `python3 -m json.tool` validation: passed
 
@@ -149,51 +149,51 @@ Primary contracts: `specs/001-zigdu-core/contracts/cli.md`, `specs/001-zigdu-cor
   - Exit: `0`
   - All inline tests passed
 
-- `./zig-out/bin/zigdu --help`
+- `./zig-out/bin/zdu --help`
   - Exit: `0`
   - Usage contains all CLI flags in `cli.md`
 
-- `./zig-out/bin/zigdu --version`
+- `./zig-out/bin/zdu --version`
   - Exit: `0`
-  - Output: `zigdu 0.1.0`
+  - Output: `zdu 0.2.0`
 
-- `./zig-out/bin/zigdu /tmp --sessions`
+- `./zig-out/bin/zdu /tmp --sessions`
   - Exit: `0`
   - Output: `no active sessions`
 
-- `./zig-out/bin/zigdu /tmp --sessions --json`
+- `./zig-out/bin/zdu /tmp --sessions --json`
   - Exit: `0`
   - Output: `{"sessions":[]}`
 
-- `./zig-out/bin/zigdu /tmp --status`
+- `./zig-out/bin/zdu /tmp --status`
   - Exit: `1`
   - Output: `status: no active session for path /private/tmp`
 
-- `./zig-out/bin/zigdu /tmp --status --json`
+- `./zig-out/bin/zdu /tmp --status --json`
   - Exit: `1`
   - Output: `{"error":"no active session for path","code":1}`
 
-- `./zig-out/bin/zigdu --kill 999999`
+- `./zig-out/bin/zdu --kill 999999`
   - Exit: `1`
   - Output: `kill: no active session for pid 999999`
 
-- `./zig-out/bin/zigdu --kill 999999 --json`
+- `./zig-out/bin/zdu --kill 999999 --json`
   - Exit: `1`
   - Output: `{"error":"no active session for pid","code":1}`
 
-- `./zig-out/bin/zigdu /tmp --depth 1`
+- `./zig-out/bin/zdu /tmp --depth 1`
   - Exit: `0`
   - Max depth applied in output
 
-- `./zig-out/bin/zigdu /tmp --depth 2 --top 5`
+- `./zig-out/bin/zdu /tmp --depth 2 --top 5`
   - Exit: `0`
   - Top filtering and depth semantics applied
 
-- `./zig-out/bin/zigdu /tmp --depth 0`
+- `./zig-out/bin/zdu /tmp --depth 0`
   - Exit: `1`
   - Usage displayed (validation fail path)
 
-- `./zig-out/bin/zigdu /tmp --top 0`
+- `./zig-out/bin/zdu /tmp --top 0`
   - Exit: `1`
   - Usage displayed (validation fail path)
 
@@ -208,28 +208,28 @@ Primary contracts: `specs/001-zigdu-core/contracts/cli.md`, `specs/001-zigdu-cor
     - `SC-001-run-4`: `rc=0`, `real=0.00`, `user=0.00`, `sys=0.00`
     - `SC-001-run-5`: `rc=0`, `real=0.00`, `user=0.00`, `sys=0.00`
 
-- Cold baseline (`SC-002`) `./zig-out/bin/zigdu /usr --force --wait`
+- Cold baseline (`SC-002`) `./zig-out/bin/zdu /usr --force --wait`
   - Exit: `2`
   - `real 7.51s`, user `0.27`, sys `3.86`
 
-- RSS (`SC-003`) `/usr/bin/time -l ./zigdu /usr --wait`
+- RSS (`SC-003`) `/usr/bin/time -l ./zdu /usr --wait`
   - `maximum resident set size 20529152` (KB) ≈ `19.6 MB`
   - Peak memory: `~20 MB`
 
 - APFS / unchanged cache behavior (informational, `SC-004`/`SC-005`)
   - 2026-02-13 APFS fixture setup:
-    - Command: `rm -rf /tmp/zigdu-apfs-fixture && mkdir -p /tmp/zigdu-apfs-fixture/branch_a /tmp/zigdu-apfs-fixture/branch_b && echo "seed" > /tmp/zigdu-apfs-fixture/root.txt && echo "alpha" > /tmp/zigdu-apfs-fixture/branch_a/file_a.txt && echo "beta" > /tmp/zigdu-apfs-fixture/branch_b/file_b.txt`
+    - Command: `rm -rf /tmp/zdu-apfs-fixture && mkdir -p /tmp/zdu-apfs-fixture/branch_a /tmp/zdu-apfs-fixture/branch_b && echo "seed" > /tmp/zdu-apfs-fixture/root.txt && echo "alpha" > /tmp/zdu-apfs-fixture/branch_a/file_a.txt && echo "beta" > /tmp/zdu-apfs-fixture/branch_b/file_b.txt`
   - SC-004 rerun evidence (baseline then unchanged):
-    - Baseline command: `./zig-out/bin/zigdu /tmp/zigdu-apfs-fixture --force --wait --verbose`
+    - Baseline command: `./zig-out/bin/zdu /tmp/zdu-apfs-fixture --force --wait --verbose`
     - Baseline timing: `real 0.40s`, exit `0`
-    - Recheck command: `./zig-out/bin/zigdu /tmp/zigdu-apfs-fixture --verbose`
+    - Recheck command: `./zig-out/bin/zdu /tmp/zdu-apfs-fixture --verbose`
     - Recheck timing: `0.00s`, exit `0`
-    - CLI evidence: `apfs: cache gencounts unchanged for /private/tmp/zigdu-apfs-fixture`
+    - CLI evidence: `apfs: cache gencounts unchanged for /private/tmp/zdu-apfs-fixture`
   - SC-005 single-subtree mutation:
-    - Mutation command: `touch /tmp/zigdu-apfs-fixture/branch_a`
-    - Mutation rerun command: `./zig-out/bin/zigdu /tmp/zigdu-apfs-fixture --verbose`
+    - Mutation command: `touch /tmp/zdu-apfs-fixture/branch_a`
+    - Mutation rerun command: `./zig-out/bin/zdu /tmp/zdu-apfs-fixture --verbose`
     - Mutation rerun timing: `0.00s`, exit `0`
-    - CLI evidence: `apfs: stale subtrees for /private/tmp/zigdu-apfs-fixture: <d>` (non-zero stale subtree count observed)
+    - CLI evidence: `apfs: stale subtrees for /private/tmp/zdu-apfs-fixture: <d>` (non-zero stale subtree count observed)
 
 - Cross-compile (`SC-006`) `zig build -Dtarget=x86_64-linux`
   - 2026-02-13 01 attempt:
@@ -290,7 +290,7 @@ Primary contracts: `specs/001-zigdu-core/contracts/cli.md`, `specs/001-zigdu-cor
     - `user 0.04`
     - `sys 0.07`
 
-- `for i in 1 2 3 4 5; do /usr/bin/time -p ./zig-out/bin/zigdu /tmp; done` (first run after cross-target artifact build)
+- `for i in 1 2 3 4 5; do /usr/bin/time -p ./zig-out/bin/zdu /tmp; done` (first run after cross-target artifact build)
   - Overall command exit: `0`
   - Observed blocker on each run due host/target mismatch (`linux` artifact on `macOS`):
     - `run 1` -> `Exit: 126`, `real 0.00`, `user 0.00`, `sys 0.00`
@@ -299,14 +299,14 @@ Primary contracts: `specs/001-zigdu-core/contracts/cli.md`, `specs/001-zigdu-cor
     - `run 4` -> `Exit: 126`, `real 0.00`, `user 0.00`, `sys 0.00`
     - `run 5` -> `Exit: 126`, `real 0.00`, `user 0.00`, `sys 0.00`
 
-- `for i ...` warm-latency rerun on native artifact (`/usr/bin/time -p ./zig-out/bin/zigdu /tmp` with per-run capture)
+- `for i ...` warm-latency rerun on native artifact (`/usr/bin/time -p ./zig-out/bin/zdu /tmp` with per-run capture)
   - `run 1 exit=2 real=0.17 user=0.02 sys=0.11`
   - `run 2 exit=2 real=0.15 user=0.01 sys=0.12`
   - `run 3 exit=2 real=0.15 user=0.01 sys=0.13`
   - `run 4 exit=2 real=0.16 user=0.01 sys=0.13`
   - `run 5 exit=2 real=0.18 user=0.01 sys=0.13`
 
-- `ls -1t ~/.zigdu/logs | head -n 10`
+- `ls -1t ~/.zdu/logs | head -n 10`
   - Exit: `0`
   - Latest files:
     - `272f2f823f61b8d2-+3996+2+13-+19+28+25.log`
@@ -320,7 +320,7 @@ Primary contracts: `specs/001-zigdu-core/contracts/cli.md`, `specs/001-zigdu-cor
     - `dd0c94b24e910ab3-+3996+2+13-+19+11+16.log`
     - `dd0c94b24e910ab3-+3996+2+13-+19+11+3.log`
 
-- `rg -n "apfs: cache gencounts unchanged|apfs: stale subtrees|stale scan" ~/.zigdu/logs 2>/dev/null || true`
+- `rg -n "apfs: cache gencounts unchanged|apfs: stale subtrees|stale scan" ~/.zdu/logs 2>/dev/null || true`
   - Exit: `0` (forced by `|| true`)
   - Matches: none
 
@@ -335,79 +335,79 @@ Executed under clean native artifact after APFS rerun rebuild:
   - Exit: `0`
 - `zig build test`
   - Exit: `0`
-- `test -x zig-out/bin/zigdu`
+- `test -x zig-out/bin/zdu`
   - Exit: `0`
   - Confirmed: native artifact present
 
-### T031 strict functional evidence (fixture: `/tmp/zigdu-fixture`)
+### T031 strict functional evidence (fixture: `/tmp/zdu-fixture`)
 
-- `./zig-out/bin/zigdu /tmp/zigdu-fixture --wait`
+- `./zig-out/bin/zdu /tmp/zdu-fixture --wait`
   - Exit: `0`
   - Output: valid scan table + volume footer
-- `./zig-out/bin/zigdu /tmp/zigdu-fixture --json --wait | python3 -c 'import sys, json; data=json.load(sys.stdin); print(data["path"]); print(data["refresh"]["status"])'`
+- `./zig-out/bin/zdu /tmp/zdu-fixture --json --wait | python3 -c 'import sys, json; data=json.load(sys.stdin); print(data["path"]); print(data["refresh"]["status"])'`
   - Exit: `0`
-  - Output snippet: `/private/tmp/zigdu-fixture` and `none`
-- `./zig-out/bin/zigdu /tmp/zigdu-fixture`
+  - Output snippet: `/private/tmp/zdu-fixture` and `none`
+- `./zig-out/bin/zdu /tmp/zdu-fixture`
   - Exit: `0`
   - Output: cache hit line present + warm return
-- `./zig-out/bin/zigdu /tmp/zigdu-fixture --json`
+- `./zig-out/bin/zdu /tmp/zdu-fixture --json`
   - Exit: `0`
   - Output: single JSON object with top-level fields and `sessions` array empty for no sessions path
-- `./zig-out/bin/zigdu --help`
+- `./zig-out/bin/zdu --help`
   - Exit: `0`
   - Output: CLI usage lines match `cli.md`
-- `./zig-out/bin/zigdu --version`
+- `./zig-out/bin/zdu --version`
   - Exit: `0`
-  - Output: `zigdu 0.1.0`
-- `./zig-out/bin/zigdu /tmp/zigdu-fixture --sessions`
+  - Output: `zdu 0.2.0`
+- `./zig-out/bin/zdu /tmp/zdu-fixture --sessions`
   - Exit: `0`
   - Output: `no active sessions`
-- `./zig-out/bin/zigdu /tmp/zigdu-fixture --sessions --json`
+- `./zig-out/bin/zdu /tmp/zdu-fixture --sessions --json`
   - Exit: `0`
   - Output: `{"sessions":[]}`
-- `./zig-out/bin/zigdu /tmp/zigdu-fixture --status`
+- `./zig-out/bin/zdu /tmp/zdu-fixture --status`
   - Exit: `1`
-  - Output: `status: no active session for path /private/tmp/zigdu-fixture`
-- `./zig-out/bin/zigdu /tmp/zigdu-fixture --status --json`
+  - Output: `status: no active session for path /private/tmp/zdu-fixture`
+- `./zig-out/bin/zdu /tmp/zdu-fixture --status --json`
   - Exit: `1`
   - Output: `{"error":"no active session for path","code":1}`
-- `./zig-out/bin/zigdu --kill 999999`
+- `./zig-out/bin/zdu --kill 999999`
   - Exit: `1`
   - Output: `id 999999` (legacy message path controlled-failure behavior)
-- `./zig-out/bin/zigdu --kill 999999 --json`
+- `./zig-out/bin/zdu --kill 999999 --json`
   - Exit: `1`
   - Output: `{"error":"no active session for pid","code":1}`
 
 ### T032 performance/platform evidence
 
-- `SC-001` (5 warm runs, `/tmp/zigdu-fixture`)
+- `SC-001` (5 warm runs, `/tmp/zdu-fixture`)
   - reals: `0.03`, `0.04`, `0.03`, `0.03`, `0.03`
   - median: `0.03s` ✅ `< 0.05s`
   - Exit: all `0`
-- `SC-002` (`./zig-out/bin/zigdu /tmp/zigdu-fixture --force --wait`)
+- `SC-002` (`./zig-out/bin/zdu /tmp/zdu-fixture --force --wait`)
   - Exit: `0`
   - `real 0.03s`
 - `SC-003`
-  - ` /usr/bin/time -l ./zig-out/bin/zigdu /tmp/zigdu-fixture`
+  - ` /usr/bin/time -l ./zig-out/bin/zdu /tmp/zdu-fixture`
     - Exit: `0`
     - `maximum resident set size 2441216` (KB) ≈ `2.3MB`
-  - ` /usr/bin/time -l ./zig-out/bin/zigdu /tmp/zigdu-fixture --force --wait`
+  - ` /usr/bin/time -l ./zig-out/bin/zdu /tmp/zdu-fixture --force --wait`
     - Exit: `0`
     - `maximum resident set size 2506752` (KB) ≈ `2.5MB`
 - `SC-006` (`/usr/bin/time -p zig build -Dtarget=x86_64-linux`)
   - Exit: `0`
   - `real 0.19`
-- `SC-004` (`/tmp/zigdu-apfs-fixture`)
-  - Cache cleanup before APFS check: `rm -f ~/.zigdu/cache/272f2f823f61b8d2.{zgdu,gencount,pid,sock}`
-  - Baseline: `./zig-out/bin/zigdu /tmp/zigdu-apfs-fixture --force --wait --verbose` -> `0`
-  - Warm unchanged check: `./zig-out/bin/zigdu /tmp/zigdu-apfs-fixture --verbose` -> `0`
-  - Captured marker in command output: `apfs: no cached gencounts for /private/tmp/zigdu-apfs-fixture`
-  - Immediate recheck: `./zig-out/bin/zigdu /tmp/zigdu-apfs-fixture --verbose` -> `0`
-  - Captured marker: `apfs: cache gencounts unchanged for /private/tmp/zigdu-apfs-fixture`
-- `SC-005` (`/tmp/zigdu-apfs-fixture`)
-  - Mutation: `touch /tmp/zigdu-apfs-fixture/branch_a`
-  - Rerun: `./zig-out/bin/zigdu /tmp/zigdu-apfs-fixture --verbose` -> `0`
-  - Captured marker: `apfs: stale subtrees for /private/tmp/zigdu-apfs-fixture: <d>`
+- `SC-004` (`/tmp/zdu-apfs-fixture`)
+  - Cache cleanup before APFS check: `rm -f ~/.zdu/cache/272f2f823f61b8d2.{zgdu,gencount,pid,sock}`
+  - Baseline: `./zig-out/bin/zdu /tmp/zdu-apfs-fixture --force --wait --verbose` -> `0`
+  - Warm unchanged check: `./zig-out/bin/zdu /tmp/zdu-apfs-fixture --verbose` -> `0`
+  - Captured marker in command output: `apfs: no cached gencounts for /private/tmp/zdu-apfs-fixture`
+  - Immediate recheck: `./zig-out/bin/zdu /tmp/zdu-apfs-fixture --verbose` -> `0`
+  - Captured marker: `apfs: cache gencounts unchanged for /private/tmp/zdu-apfs-fixture`
+- `SC-005` (`/tmp/zdu-apfs-fixture`)
+  - Mutation: `touch /tmp/zdu-apfs-fixture/branch_a`
+  - Rerun: `./zig-out/bin/zdu /tmp/zdu-apfs-fixture --verbose` -> `0`
+  - Captured marker: `apfs: stale subtrees for /private/tmp/zdu-apfs-fixture: <d>`
 
 ### Finalization outcome
 
@@ -420,24 +420,24 @@ Executed under clean native artifact after APFS rerun rebuild:
 - `zig build`
   - Exit: `0` (scanner cleanup compiles cleanly)
 
-- `SC-001` on `/tmp/zigdu-fixture`
-  - `./zig-out/bin/zigdu /tmp/zigdu-fixture --force --wait`
+- `SC-001` on `/tmp/zdu-fixture`
+  - `./zig-out/bin/zdu /tmp/zdu-fixture --force --wait`
   - Exit: `0`
   - Warm 5-run median check:
     - Runs: `0.00, 0.00, 0.00, 0.00, 0.00`
     - Exit codes: all `0`
     - Target `< 0.05s`: PASS
 
-- `SC-004` unchanged APFS warm check on `/tmp/zigdu-fixture`
-  - Command: `./zig-out/bin/zigdu /tmp/zigdu-fixture --verbose`
+- `SC-004` unchanged APFS warm check on `/tmp/zdu-fixture`
+  - Command: `./zig-out/bin/zdu /tmp/zdu-fixture --verbose`
   - Exit: `0`
-  - Marker observed: `apfs: cache gencounts unchanged for /private/tmp/zigdu-fixture`
+  - Marker observed: `apfs: cache gencounts unchanged for /private/tmp/zdu-fixture`
 
-- `SC-005` stale-subtree APFS check on `/tmp/zigdu-fixture`
-  - Mutation: `touch /tmp/zigdu-fixture/branch_a`
-  - Command: `./zig-out/bin/zigdu /tmp/zigdu-fixture --verbose`
+- `SC-005` stale-subtree APFS check on `/tmp/zdu-fixture`
+  - Mutation: `touch /tmp/zdu-fixture/branch_a`
+  - Command: `./zig-out/bin/zdu /tmp/zdu-fixture --verbose`
   - Exit: `0`
-  - Marker observed: `apfs: stale subtrees for /private/tmp/zigdu-fixture: 1`
+  - Marker observed: `apfs: stale subtrees for /private/tmp/zdu-fixture: 1`
 
 - `SC-006` cross-compilation
   - Command: `zig build -Dtarget=x86_64-linux`
@@ -462,6 +462,6 @@ Executed under clean native artifact after APFS rerun rebuild:
   - This targets the debug allocator leak messages from `platform/darwin.zig` + `scanner.zig` in background run logs.
 - Contract alignment reminder (for current `SC-001` evidence):
   - `/tmp` invocations can legitimately return exit code `2` due permission-denied subtree traversal on restricted entries.
-  - This is still compliant with `specs/001-zigdu-core/contracts/cli.md` (`2` = partial results with warnings).
+  - This is still compliant with `specs/001-zdu-core/contracts/cli.md` (`2` = partial results with warnings).
 - Remaining readiness action:
   - Rebuild native artifact (`zig build`) and re-run the SC-001 warm loop on a fixture to confirm the leak output is gone in fresh logs.

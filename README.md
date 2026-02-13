@@ -1,12 +1,12 @@
-# zigdu
+# zdu
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 Fast, cache-first disk usage scanning for humans, scripts, and autonomous agents.
 
-`zigdu` scans directory trees, stores structured cache results, and returns warm responses quickly on repeated runs. It also supports background refresh sessions with explicit status and cancellation controls.
+`zdu` scans directory trees, stores structured cache results, and returns warm responses quickly on repeated runs. It also supports background refresh sessions with explicit status and cancellation controls.
 
-## Why zigdu
+## Why zdu
 
 - Fast repeat checks with warm local cache
 - Script-friendly JSON output (`--json`)
@@ -25,9 +25,9 @@ Fast, cache-first disk usage scanning for humans, scripts, and autonomous agents
 
 ```bash
 git clone <your-fork-or-origin-url>
-cd zigdu
+cd zdu
 zig build
-./zig-out/bin/zigdu --help
+./zig-out/bin/zdu --help
 ```
 
 You can also run via Zig directly:
@@ -40,28 +40,28 @@ zig build run -- [options] [path]
 
 ```bash
 # 1) Scan once and block until completion
-./zig-out/bin/zigdu /Users/you --wait
+./zig-out/bin/zdu /Users/you --wait
 
 # 2) Read from cache (usually much faster)
-./zig-out/bin/zigdu /Users/you
+./zig-out/bin/zdu /Users/you
 
 # 3) JSON for automation
-./zig-out/bin/zigdu /Users/you --json
+./zig-out/bin/zdu /Users/you --json
 ```
 
 ## Common commands
 
 ```bash
 # Fresh full scan
-zigdu /some/path --force --wait
+zdu /some/path --force --wait
 
 # Limit output rendering (scan still traverses full tree)
-zigdu /some/path --depth 3 --top 20
+zdu /some/path --depth 3 --top 20
 
 # Session controls
-zigdu --sessions
-zigdu /some/path --status
-zigdu --kill 12345
+zdu --sessions
+zdu /some/path --status
+zdu --kill 12345
 ```
 
 ## Exit codes
@@ -92,7 +92,7 @@ Session/status commands also emit structured JSON when combined with `--json`.
 Config file:
 
 ```text
-~/.zigdu/config
+~/.zdu/config
 ```
 
 Format: `key = value`, one per line, `#` comments supported.
@@ -110,9 +110,9 @@ Supported keys:
 Defaults:
 
 ```text
-base_dir=~/.zigdu
-cache_dir=~/.zigdu/cache
-log_dir=~/.zigdu/logs
+base_dir=~/.zdu
+cache_dir=~/.zdu/cache
+log_dir=~/.zdu/logs
 max_cache_bytes=1073741824
 default_depth=3
 default_top=20
@@ -121,7 +121,7 @@ max_log_age_days=30
 
 ## Cache and runtime files
 
-- Cache payload: `<cache_dir>/<path_hash>.zgdu`
+- Cache payload: `<cache_dir>/<path_hash>.zdu`
 - APFS/HFS+ metadata: `<cache_dir>/<path_hash>.gencount`
 - Session PID: `<cache_dir>/<path_hash>.pid`
 - Session socket: `<cache_dir>/<path_hash>.sock`

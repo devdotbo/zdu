@@ -1,6 +1,6 @@
-# Data Model: zigdu - Fast Disk Usage Scanner with Persistent Cache
+# Data Model: zdu - Fast Disk Usage Scanner with Persistent Cache
 
-**Feature Branch**: `001-zigdu-core` | **Date**: 2026-02-13 | **Spec**: [spec.md](spec.md) | **Research**: [research.md](research.md)
+**Feature Branch**: `001-zdu-core` | **Date**: 2026-02-13 | **Spec**: [spec.md](spec.md) | **Research**: [research.md](research.md)
 
 ---
 
@@ -105,17 +105,17 @@ A persisted `ScanResult` stored as a binary file on disk. Identified by the cano
 | Field              | Type            | Description                                                    |
 |--------------------|-----------------|----------------------------------------------------------------|
 | `canonical_path`   | `[]const u8`    | Canonical absolute real path (identity key)                    |
-| `file_path`        | `[]const u8`    | Path to the `.zgdu` file on disk                               |
-| `version`          | `u32`           | Cache format version (current: 1)                              |
+| `file_path`        | `[]const u8`    | Path to the `.zdu` file on disk                               |
+| `version`          | `u32`           | Cache format version (current: 2)                              |
 | `header`           | `CacheHeader`   | 32-byte binary header                                          |
 | `entries`          | `[]CacheEntryRecord` | Variable-length binary entry records                     |
 | `apfs_gencounts`   | `?[]ApfsGencount`   | Optional APFS generation counts per cached subtree (macOS only) |
 
-**File naming**: The cache file is stored at `{cache_dir}/{path_hash}.zgdu` where `path_hash` is a 64-bit hash (SipHash or xxHash) of the canonical path, hex-encoded. Example: `~/.zigdu/cache/a1b2c3d4e5f67890.zgdu`.
+**File naming**: The cache file is stored at `{cache_dir}/{path_hash}.zdu` where `path_hash` is a 64-bit hash (SipHash or xxHash) of the canonical path, hex-encoded. Example: `~/.zdu/cache/a1b2c3d4e5f67890.zdu`.
 
 **File locking**: Cache files are written atomically via `std.fs.Dir.atomicFile` (write to temp file, rename on completion). Readers never see partial writes. No advisory locks are needed.
 
-**LRU tracking**: The file's filesystem `mtime` serves as the last-access timestamp. Reading a cache file updates `mtime` via `file.updateTimes()`. Eviction scans `*.zgdu` files, sorts by `mtime` ascending, and deletes the oldest until total size is under `max_cache_bytes`.
+**LRU tracking**: The file's filesystem `mtime` serves as the last-access timestamp. Reading a cache file updates `mtime` via `file.updateTimes()`. Eviction scans `*.zdu` files, sorts by `mtime` ascending, and deletes the oldest until total size is under `max_cache_bytes`.
 
 ---
 
@@ -134,7 +134,7 @@ Per-subtree APFS generation count, stored alongside cache entries on macOS/APFS 
 3. If equal, the subtree is unchanged - serve from cache
 4. If different, rescan only that subtree and update the gencount
 
-**Storage**: APFS gencounts are stored in a companion file `{path_hash}.gencount` alongside the `.zgdu` cache file. This keeps the core binary format platform-independent.
+**Storage**: APFS gencounts are stored in a companion file `{path_hash}.gencount` alongside the `.zdu` cache file. This keeps the core binary format platform-independent.
 
 | Offset | Size | Field             | Description                                    |
 |--------|------|-------------------|------------------------------------------------|
@@ -236,11 +236,11 @@ Progress metrics for a running scan, reported via IPC.
 
 ### 2.8 Config
 
-User-configurable settings, loaded from `~/.zigdu/config` (plain key=value text format, one entry per line, `#` prefix for comments, blank lines ignored).
+User-configurable settings, loaded from `~/.zdu/config` (plain key=value text format, one entry per line, `#` prefix for comments, blank lines ignored).
 
 | Field              | Type      | Default            | Description                                      |
 |--------------------|-----------|--------------------|--------------------------------------------------|
-| `base_dir`         | `[]const u8` | `~/.zigdu`      | Root directory for all zigdu data                 |
+| `base_dir`         | `[]const u8` | `~/.zdu`      | Root directory for all zdu data                 |
 | `cache_dir`        | `[]const u8` | `{base_dir}/cache` | Directory for cache files                     |
 | `log_dir`          | `[]const u8` | `{base_dir}/logs`  | Directory for background session logs         |
 | `max_cache_bytes`  | `u64`     | 1073741824 (1 GB)  | Maximum total size of all cache files             |
@@ -248,11 +248,11 @@ User-configurable settings, loaded from `~/.zigdu/config` (plain key=value text 
 | `default_top`      | `u16`     | 20                 | Default `--top` value when not specified          |
 | `max_log_age_days` | `u16`     | 30                 | Delete log files older than this many days on startup |
 
-**Config file format** (`~/.zigdu/config`):
+**Config file format** (`~/.zdu/config`):
 
 ```
-cache_dir = /Users/bioharz/.zigdu/cache
-log_dir = /Users/bioharz/.zigdu/logs
+cache_dir = /Users/bioharz/.zdu/cache
+log_dir = /Users/bioharz/.zdu/logs
 max_cache_bytes = 1073741824
 default_depth = 3
 default_top = 20
@@ -394,7 +394,7 @@ SessionState = enum(u8) {
 
 ### 5.1 Overview
 
-Cache files use a compact binary format optimized for memory-mapped reads. All multi-byte integers are **little-endian**. The file extension is `.zgdu`.
+Cache files use a compact binary format optimized for memory-mapped reads. All multi-byte integers are **little-endian**. The file extension is `.zdu`.
 
 ```
 +==========================+
@@ -414,8 +414,8 @@ Cache files use a compact binary format optimized for memory-mapped reads. All m
 
 | Offset | Size | Field             | Type    | Description                                      |
 |--------|------|-------------------|---------|--------------------------------------------------|
-| 0      | 4B   | `magic`           | `[4]u8` | ASCII "ZGDU" (0x5A, 0x47, 0x44, 0x55)           |
-| 4      | 4B   | `version`         | `u32`   | Format version (current: 1)                      |
+| 0      | 4B   | `magic`           | `[4]u8` | ASCII "ZDU0" (0x5A, 0x44, 0x55, 0x30)           |
+| 4      | 4B   | `version`         | `u32`   | Format version (current: 2)                      |
 | 8      | 8B   | `timestamp`       | `i64`   | Scan completion time as Unix epoch seconds (UTC) |
 | 16     | 8B   | `scan_duration_ms`| `u64`   | Wall-clock scan duration in milliseconds         |
 | 24     | 8B   | `entry_count`     | `u64`   | Number of DirectoryEntry records that follow     |
@@ -424,8 +424,8 @@ Cache files use a compact binary format optimized for memory-mapped reads. All m
 
 ```zig
 const CacheHeader = extern struct {
-    magic: [4]u8,            // "ZGDU"
-    version: u32,            // 1
+    magic: [4]u8,            // "ZDU0"
+    version: u32,            // 2
     timestamp: i64,          // Unix epoch seconds
     scan_duration_ms: u64,   // milliseconds
     entry_count: u64,        // number of entries
@@ -475,7 +475,7 @@ This works because entries are in depth-first pre-order. An entry at depth D is 
 
 ### 5.5 Volume Info Encoding
 
-Volume info is **not** stored in the `.zgdu` cache file. It is retrieved fresh on each invocation via `statfs()`/`statvfs()` because volume capacity changes frequently (files created/deleted between scans). Storing stale free/used values would be misleading.
+Volume info is **not** stored in the `.zdu` cache file. It is retrieved fresh on each invocation via `statfs()`/`statvfs()` because volume capacity changes frequently (files created/deleted between scans). Storing stale free/used values would be misleading.
 
 ### 5.6 Size Estimates
 
@@ -515,7 +515,7 @@ This ensures readers never see partial data (FR-019).
 
 When the `version` field does not match the expected value, the cache file is treated as invalid. The tool logs a warning (if `--verbose`) and falls back to a fresh scan, overwriting the old file.
 
-When the `magic` field is not "ZGDU", the file is treated as corrupt. Same behavior as version mismatch.
+When the `magic` field is not "ZDU0", the file is treated as corrupt. Same behavior as version mismatch.
 
 ---
 
@@ -525,8 +525,8 @@ When the `magic` field is not "ZGDU", the file is treated as corrupt. Same behav
 
 | Rule ID | Check                                              | On Failure                              |
 |---------|----------------------------------------------------|-----------------------------------------|
-| V-001   | `magic` equals "ZGDU"                              | Treat as corrupt, discard and rescan    |
-| V-002   | `version` equals expected version (currently 1)    | Treat as incompatible, discard and rescan |
+| V-001   | `magic` equals "ZDU0"                              | Treat as corrupt, discard and rescan    |
+| V-002   | `version` equals expected version (currently 2)    | Treat as incompatible, discard and rescan |
 | V-003   | `timestamp` is a positive integer and <= current time | Treat as corrupt, discard and rescan |
 | V-004   | `entry_count` > 0                                  | Treat as empty/corrupt, discard and rescan |
 | V-005   | File size >= 32 + sum of all entry sizes            | Treat as truncated, discard and rescan  |
@@ -567,14 +567,14 @@ When the `magic` field is not "ZGDU", the file is treated as corrupt. Same behav
 ## 7. File System Layout
 
 ```
-~/.zigdu/
+~/.zdu/
   config                              # User configuration (key=value)
   cache/
-    a1b2c3d4e5f67890.zgdu             # Binary cache file (ScanResult for some path)
+    a1b2c3d4e5f67890.zdu             # Binary cache file (ScanResult for some path)
     a1b2c3d4e5f67890.gencount         # APFS gencount companion (macOS only)
     a1b2c3d4e5f67890.pid              # PID file for active background session
     a1b2c3d4e5f67890.sock             # Unix domain socket for active session
-    f9e8d7c6b5a43210.zgdu             # Another cached path
+    f9e8d7c6b5a43210.zdu             # Another cached path
     ...
   logs/
     a1b2c3d4e5f67890-1707840000.log   # Session log: {path_hash}-{start_timestamp}.log

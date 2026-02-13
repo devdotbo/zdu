@@ -1,6 +1,6 @@
-# Tasks: zigdu - Fast Disk Usage Scanner with Persistent Cache
+# Tasks: zdu - Fast Disk Usage Scanner with Persistent Cache
 
-**Input**: Design documents from `/specs/001-zigdu-core/`
+**Input**: Design documents from `/specs/001-zdu-core/`
 **Prerequisites**: plan.md (required), spec.md (required), research.md, data-model.md, contracts/
 
 **Tests**: Each implementation task should include inline Zig `test` blocks alongside the code it produces (Zig community convention). Test assertions are part of the implementation, not separate tasks.
@@ -24,8 +24,8 @@
 
 **Purpose**: Project initialization, build config, and shared type definitions
 
-- [x] T001 Create project directory structure (`src/`, `src/platform/`) and initialize `build.zig` with Zig 0.15.2 build config (exe target `zigdu` from `src/main.zig`, link libc on macOS via `exe.root_module.link_libc = true` when `builtin.os.tag == .macos`, add `zig build test` step aggregating all source files) and `build.zig.zon` package manifest
-- [x] T002 [P] Define all shared data types in `src/types.zig`: `DirectoryEntry` (path, size_bytes, file_count, dir_count, depth, children), `ScanResult` (path, timestamp, duration_ms, volume_info, root_entry, entry_count), `VolumeInfo` (mount_point, fs_type as FsType enum, total/used/free_bytes), `CacheHeader` (extern struct, 32 bytes: magic "ZGDU", version u32, timestamp i64, scan_duration_ms u64, entry_count u64 with comptime size assert), `SessionState` enum, `ScanProgress`, `Config` struct with compiled defaults (base_dir `~/.zigdu`, cache_dir, log_dir, max_cache_bytes 1GB, default_depth 3, default_top 20)
+- [x] T001 Create project directory structure (`src/`, `src/platform/`) and initialize `build.zig` with Zig 0.15.2 build config (exe target `zdu` from `src/main.zig`, link libc on macOS via `exe.root_module.link_libc = true` when `builtin.os.tag == .macos`, add `zig build test` step aggregating all source files) and `build.zig.zon` package manifest
+- [x] T002 [P] Define all shared data types in `src/types.zig`: `DirectoryEntry` (path, size_bytes, file_count, dir_count, depth, children), `ScanResult` (path, timestamp, duration_ms, volume_info, root_entry, entry_count), `VolumeInfo` (mount_point, fs_type as FsType enum, total/used/free_bytes), `CacheHeader` (extern struct, 32 bytes: magic "ZDU0", version u32, timestamp i64, scan_duration_ms u64, entry_count u64 with comptime size assert), `SessionState` enum, `ScanProgress`, `Config` struct with compiled defaults (base_dir `~/.zdu`, cache_dir, log_dir, max_cache_bytes 1GB, default_depth 3, default_top 20)
 - [x] T003 [P] Implement path canonicalization and hashing in `src/path.zig`: `canonicalize()` resolving symlinks via `std.fs.realpath()`, stripping trailing slashes, ensuring absolute paths (V-010..V-014); `hashPath()` returning 64-bit hash of canonical path as hex string for cache file naming
 
 ---
@@ -44,32 +44,32 @@
 
 ## Phase 3: User Story 1 - Scan Disk Usage for a Path (Priority: P1) - MVP
 
-**Goal**: A user runs `zigdu <path> --wait` and sees disk usage broken down by subdirectories, sorted by size descending, with bar chart and volume summary.
+**Goal**: A user runs `zdu <path> --wait` and sees disk usage broken down by subdirectories, sorted by size descending, with bar chart and volume summary.
 
-**Independent Test**: Run `zigdu /some/path --wait` and verify output shows sizes sorted largest first with total/used/free summary. Run against nonexistent path and verify error with exit code 1. Run against path with restricted subdirs and verify partial results with warnings and exit code 2.
+**Independent Test**: Run `zdu /some/path --wait` and verify output shows sizes sorted largest first with total/used/free summary. Run against nonexistent path and verify error with exit code 1. Run against path with restricted subdirs and verify partial results with warnings and exit code 2.
 
 ### Implementation for User Story 1
 
 - [x] T007 [P] [US1] Implement core directory scanning in `src/scanner.zig`: `scan(path, config) ScanResult` using `std.Thread.Pool` with `spawnWg` for parallel traversal; each top-level subdirectory is a work item; workers use platform `DirIterator` for recursive traversal; accumulate size_bytes, file_count, dir_count per DirectoryEntry; build tree with depth values; skip symlinks (FR-016); respect filesystem boundaries by comparing device IDs unless cross_mount is set (FR-017); skip inaccessible dirs with warning to stderr (FR-018); handle deep trees iteratively with explicit stack (no recursion); accumulate file_count and dir_count recursively (same as size_bytes) -- propagate child counts upward to parent entries; detect I/O errors indicating volume disappearance during traversal, use shared atomic cancellation flag to signal all worker threads to stop gracefully, preserve any partial results; note on memory budget (SC-003): DirectoryEntry nodes represent directories, not files -- for a typical 15M-file volume with ~500K-1M directories at ~60 bytes/entry, peak memory usage should be 30-60MB, well under the 200MB target; if RSS approaches 150MB during scanning, reduce thread pool size or batch-flush intermediate results
 - [x] T008 [P] [US1] Implement human-readable output formatting in `src/output.zig`: `formatHumanReadable(ScanResult, depth, top, writer)` rendering table with columns: size (auto-scaled bytes/KB/MB/GB/TB), percentage of parent, proportional ASCII bar (`[========  ]`), and relative path; sort entries by size descending (FR-003); header line with scanned path; footer with volume summary (total, used, free from VolumeInfo); support for cache age display (e.g., "cached 2h 14m ago") when cache_timestamp is provided
 - [x] T009 [US1] Implement CLI entry point in `src/main.zig`: parse args using `std.process.ArgIterator` for positional path (default "."), flags --wait/-w, --force/-f, --json/-j, --verbose/-v, --cross-mount, options --depth/-d N, --top/-t N, --kill PID, standalone commands --sessions, --status, --help, --version; validate args per cli.md contract (exit code 1 for invalid); resolve path via `path.canonicalize()`; for this story: implement scan-and-display flow when no cache exists or --wait is specified; note: all flags are parsed here for completeness but handlers for --sessions, --status, and --kill are wired in Phase 8 (T024) -- until then, these code paths are parsed but not routed
-- [x] T010 [US1] Wire end-to-end scan flow in `src/main.zig`: when path has no cache (or --wait), call `scanner.scan()`, retrieve `platform.getVolumeInfo()`, call `output.formatHumanReadable()` to stdout, print warnings to stderr for skipped paths, set exit code 0 (success) or 2 (partial results); ensure --help prints usage and --version prints "zigdu 0.1.0"
+- [x] T010 [US1] Wire end-to-end scan flow in `src/main.zig`: when path has no cache (or --wait), call `scanner.scan()`, retrieve `platform.getVolumeInfo()`, call `output.formatHumanReadable()` to stdout, print warnings to stderr for skipped paths, set exit code 0 (success) or 2 (partial results); ensure --help prints usage and --version prints "zdu 0.2.0"
 
-**Checkpoint**: User Story 1 fully functional - `zigdu <path> --wait` scans and displays disk usage
+**Checkpoint**: User Story 1 fully functional - `zdu <path> --wait` scans and displays disk usage
 
 ---
 
 ## Phase 4: User Story 2 - Instant Cached Results (Priority: P2)
 
-**Goal**: Running `zigdu <path>` on a previously scanned path returns results instantly from cache with cache age indicator.
+**Goal**: Running `zdu <path>` on a previously scanned path returns results instantly from cache with cache age indicator.
 
 **Independent Test**: Scan a path with `--wait`, then run again without `--wait` and verify results appear in <50ms with cache timestamp and age. Run with `--force` and verify fresh scan. Corrupt the cache file magic bytes and verify graceful fallback to rescan.
 
 ### Implementation for User Story 2
 
-- [x] T011 [US2] Implement binary cache writer in `src/cache.zig`: `writeCache(scan_result, config) void` using `std.fs.Dir.atomicFile()` for crash-safe writes; write 32-byte CacheHeader (magic "ZGDU", version 1, timestamp, duration, entry_count) then all DirectoryEntry records in depth-first pre-order (2B path_len + path bytes + 8B size_bytes + 4B file_count + 4B dir_count + 1B depth) using `writer.writeInt(T, val, .little)` for integers; seek back to patch entry_count in header; file path is `{cache_dir}/{path_hash}.zgdu`; update mtime after write for LRU tracking; handle atomicFile failure (disk full, permission denied) gracefully -- log warning to stderr, do not crash; atomicFile cleans up temp file on failure
-- [x] T012 [US2] Implement binary cache reader in `src/cache.zig`: `readCache(path_hash, config) ?ScanResult` using `posix.mmap` with `PROT.READ`, `.TYPE = .PRIVATE`, `MADV.SEQUENTIAL` for zero-copy reads; validate header: magic == "ZGDU" (V-001), version == 1 (V-002), timestamp > 0 and <= now (V-003), entry_count > 0 (V-004), file size consistency (V-005); parse variable-length entries reading `path_len` then path bytes then fixed fields using `std.mem.readInt`; reconstruct tree from flat entries using depth-stack algorithm (V-007, V-008); update file mtime via `updateTimes()` on successful read; return null on any validation failure (triggers rescan)
-- [x] T013 [US2] Implement LRU cache eviction in `src/cache.zig`: `evictIfNeeded(config) void` scanning `{cache_dir}/*.zgdu` files, collecting (path, size, mtime) tuples, sorting by mtime ascending; if total size exceeds `config.max_cache_bytes`, delete oldest files until under cap; run opportunistically during cache writes (FR-023); also delete corresponding `.gencount`, `.pid`, `.sock` companion files when evicting
+- [x] T011 [US2] Implement binary cache writer in `src/cache.zig`: `writeCache(scan_result, config) void` using `std.fs.Dir.atomicFile()` for crash-safe writes; write 32-byte CacheHeader (magic "ZDU0", version 2, timestamp, duration, entry_count) then all DirectoryEntry records in depth-first pre-order (2B path_len + path bytes + 8B size_bytes + 4B file_count + 4B dir_count + 1B depth) using `writer.writeInt(T, val, .little)` for integers; seek back to patch entry_count in header; file path is `{cache_dir}/{path_hash}.zdu`; update mtime after write for LRU tracking; handle atomicFile failure (disk full, permission denied) gracefully -- log warning to stderr, do not crash; atomicFile cleans up temp file on failure
+- [x] T012 [US2] Implement binary cache reader in `src/cache.zig`: `readCache(path_hash, config) ?ScanResult` using `posix.mmap` with `PROT.READ`, `.TYPE = .PRIVATE`, `MADV.SEQUENTIAL` for zero-copy reads; validate header: magic == "ZDU0" (V-001), version == 2 (V-002), timestamp > 0 and <= now (V-003), entry_count > 0 (V-004), file size consistency (V-005); parse variable-length entries reading `path_len` then path bytes then fixed fields using `std.mem.readInt`; reconstruct tree from flat entries using depth-stack algorithm (V-007, V-008); update file mtime via `updateTimes()` on successful read; return null on any validation failure (triggers rescan)
+- [x] T013 [US2] Implement LRU cache eviction in `src/cache.zig`: `evictIfNeeded(config) void` scanning `{cache_dir}/*.zdu` files, collecting (path, size, mtime) tuples, sorting by mtime ascending; if total size exceeds `config.max_cache_bytes`, delete oldest files until under cap; run opportunistically during cache writes (FR-023); also delete corresponding `.gencount`, `.pid`, `.sock` companion files when evicting
 - [x] T014 [US2] Integrate cache into `src/main.zig` scan flow: on invocation, compute path_hash, attempt `readCache()`; if cache hit and no --force: display cached results with cache age header (timestamp + "cached Xh Ym ago"), then proceed to background refresh (US3, for now just return); if cache miss or --force: run scanner, write cache, display results; handle corrupt cache gracefully by falling back to fresh scan; if cache write fails (disk full), continue to display results to the user -- cache persistence is best-effort, not blocking
 
 **Checkpoint**: Cached results return in <50ms; `--force` triggers rescan; corrupt cache triggers automatic rescan
@@ -80,7 +80,7 @@
 
 **Goal**: After displaying cached results, a background process refreshes the cache silently. The user sees fresher results on the next run.
 
-**Independent Test**: Run `zigdu <path>` on cached path, verify PID of background process is displayed. Wait for completion. Run `zigdu <path>` again and verify cache timestamp is more recent. Run again and verify no duplicate background process is spawned.
+**Independent Test**: Run `zdu <path>` on cached path, verify PID of background process is displayed. Wait for completion. Run `zdu <path>` again and verify cache timestamp is more recent. Run again and verify no duplicate background process is spawned.
 
 ### Implementation for User Story 3
 
@@ -94,16 +94,16 @@
 
 ## Phase 6: User Story 4 - Machine-Readable JSON Output (Priority: P4)
 
-**Goal**: `zigdu <path> --json` outputs valid structured JSON per the json-output.md contract.
+**Goal**: `zdu <path> --json` outputs valid structured JSON per the json-output.md contract.
 
-**Independent Test**: Run `zigdu <path> --json --wait`, pipe through a JSON parser (e.g., `python3 -m json.tool`), verify valid JSON with fields: path, cache_timestamp, cache_age_seconds, scan_duration_ms, volume, entries array, refresh object.
+**Independent Test**: Run `zdu <path> --json --wait`, pipe through a JSON parser (e.g., `python3 -m json.tool`), verify valid JSON with fields: path, cache_timestamp, cache_age_seconds, scan_duration_ms, volume, entries array, refresh object.
 
 ### Implementation for User Story 4
 
 - [x] T018 [US4] Implement JSON output formatting in `src/output.zig`: `formatJson(ScanResult, ?BackgroundSession, depth, top, writer)` producing JSON per json-output.md schema; top-level fields: path, cache_timestamp (ISO 8601 UTC), cache_age_seconds, scan_duration_ms, refresh (status/pid/estimated_remaining_seconds or null), volume (total_bytes/used_bytes/free_bytes/filesystem), entries array (path/bytes/percent/file_count/dir_count/depth); also implement `formatStatusJson()`, `formatSessionsJson()`, `formatCancelJson()`, `formatErrorJson()` for standalone commands; use `std.json.stringify` or manual JSON writing with proper escaping; serialize FsType to JSON strings per data-model.md mapping (notably hfsplus -> "hfs+")
 - [x] T019 [US4] Add --json routing in `src/main.zig`: when --json flag is set, call `output.formatJson()` instead of `formatHumanReadable()` for scan results; route --sessions through `formatSessionsJson()`, --status through `formatStatusJson()`, errors through `formatErrorJson()`; ensure stderr stays clean (no mixing of human text into stdout when --json is active)
 
-**Checkpoint**: `zigdu <path> --json` produces valid, parseable JSON matching the contract schema
+**Checkpoint**: `zdu <path> --json` produces valid, parseable JSON matching the contract schema
 
 ---
 
@@ -111,7 +111,7 @@
 
 **Goal**: Users control output granularity with `--depth N` and `--top N` to focus on the most relevant directories.
 
-**Independent Test**: Run `zigdu <path> --depth 1` and verify only immediate children shown. Run `--depth 3` and verify three levels. Run `--top 5` and verify only 5 largest entries per level. Run without flags and verify defaults (depth 3, top 20).
+**Independent Test**: Run `zdu <path> --depth 1` and verify only immediate children shown. Run `--depth 3` and verify three levels. Run `--top 5` and verify only 5 largest entries per level. Run without flags and verify defaults (depth 3, top 20).
 
 ### Implementation for User Story 5
 
@@ -126,7 +126,7 @@
 
 **Goal**: Users can list all active background scans and stop ones they no longer need.
 
-**Independent Test**: Start background scans on multiple paths, run `zigdu --sessions` and verify all listed with path/PID/progress. Run `zigdu --kill <pid>` and verify process stops and is no longer listed. Run `--sessions` with no active scans and verify "no active sessions" message.
+**Independent Test**: Start background scans on multiple paths, run `zdu --sessions` and verify all listed with path/PID/progress. Run `zdu --kill <pid>` and verify process stops and is no longer listed. Run `--sessions` with no active scans and verify "no active sessions" message.
 
 ### Implementation for User Story 6
 
@@ -142,7 +142,7 @@
 
 **Goal**: On macOS/APFS, validate cached subtrees via generation counts, rescanning only changed portions.
 
-**Independent Test**: On macOS/APFS: scan a path, modify a file in one subdirectory, run zigdu again, verify only the changed subtree is rescanned (check verbose output). On Linux: verify graceful fallback to full rescan without errors.
+**Independent Test**: On macOS/APFS: scan a path, modify a file in one subdirectory, run zdu again, verify only the changed subtree is rescanned (check verbose output). On Linux: verify graceful fallback to full rescan without errors.
 
 ### Implementation for User Story 7
 
@@ -159,13 +159,13 @@
 
 **Purpose**: Config file support, verbose logging, and final validation
 
-- [x] T029 [P] Implement Config file loading in `src/types.zig`: `Config.load() Config` reading `~/.zigdu/config` key=value format, parsing each known key (cache_dir, log_dir, max_cache_bytes, default_depth, default_top), applying validation rules V-030..V-033 (clamp out-of-range values with warning to stderr), creating `~/.zigdu/`, `cache/`, `logs/` directories if they do not exist; add `max_log_age_days` config key (default: 30, minimum: 1) and on startup delete log files in `{log_dir}/` older than the configured age; called at startup in main.zig before any other operation
+- [x] T029 [P] Implement Config file loading in `src/types.zig`: `Config.load() Config` reading `~/.zdu/config` key=value format, parsing each known key (cache_dir, log_dir, max_cache_bytes, default_depth, default_top), applying validation rules V-030..V-033 (clamp out-of-range values with warning to stderr), creating `~/.zdu/`, `cache/`, `logs/` directories if they do not exist; add `max_log_age_days` config key (default: 30, minimum: 1) and on startup delete log files in `{log_dir}/` older than the configured age; called at startup in main.zig before any other operation
 - [x] T030 [P] Implement verbose diagnostic logging across modules: in `src/main.zig` pass verbose flag through to scanner and cache; scanner logs to stderr: cache hit/miss, APFS detection, skipped paths, timing; daemon writes structured log lines (`[INFO]`/`[WARN]`/`[DEBUG]` prefixed with ISO 8601 timestamp) to `{log_dir}/{path_hash}-{timestamp}.log` per ipc-protocol.md log format; one log file per background session (FR-025)
-- [x] T031 Run quickstart.md validation: build with `zig build`, run `zigdu /tmp --wait`, verify human-readable output; run `zigdu /tmp --json --wait`, verify valid JSON; run `zigdu /tmp` (cached), verify instant return with cache age; run `zig build test`, verify all inline test blocks pass (test blocks are written as part of each implementation task, not as separate tasks).  
+- [x] T031 Run quickstart.md validation: build with `zig build`, run `zdu /tmp --wait`, verify human-readable output; run `zdu /tmp --json --wait`, verify valid JSON; run `zdu /tmp` (cached), verify instant return with cache age; run `zig build test`, verify all inline test blocks pass (test blocks are written as part of each implementation task, not as separate tasks).  
   - Completed: build succeeds, scan commands execute, JSON parses, cached behavior confirmed, `zig build test` passes.
-- [ ] T032 Run performance and cross-platform validation for success criteria: measure cached result retrieval time and verify <50ms (SC-001); time a cold scan on a large directory and report duration vs 60s target (SC-002); monitor RSS memory during scan and verify <200MB (SC-003); on macOS/APFS, time cache validation for unchanged volume and verify <1s (SC-004); on macOS/APFS, modify one subtree, run warm scan, and verify partial rescan completes in <10s (SC-005); verify `zig build -Dtarget=x86_64-linux` cross-compiles without errors (SC-006); verify `zigdu --help` and `zigdu --version` output format matches cli.md contract on both targets.  
+- [ ] T032 Run performance and cross-platform validation for success criteria: measure cached result retrieval time and verify <50ms (SC-001); time a cold scan on a large directory and report duration vs 60s target (SC-002); monitor RSS memory during scan and verify <200MB (SC-003); on macOS/APFS, time cache validation for unchanged volume and verify <1s (SC-004); on macOS/APFS, modify one subtree, run warm scan, and verify partial rescan completes in <10s (SC-005); verify `zig build -Dtarget=x86_64-linux` cross-compiles without errors (SC-006); verify `zdu --help` and `zdu --version` output format matches cli.md contract on both targets.  
   - Current status: **Partial** in this environment.  
-    - SC-001: cached retrieval below 50ms for small target (`/tmp/zigdu-validate`), but `/tmp` dataset warm runs ~130-160ms.
+    - SC-001: cached retrieval below 50ms for small target (`/tmp/zdu-validate`), but `/tmp` dataset warm runs ~130-160ms.
     - SC-002: cold `/usr` scan completed in ~7.7s.
     - SC-003: RSS observed near 4.47MB (`time -l` on cached run).
     - SC-004: APFS branch exercised via verbose logs.
@@ -270,16 +270,16 @@ Phase 7 (US5): T020 -> T021 (Depth/Top)
 1. Complete Phase 1: Setup (T001-T003)
 2. Complete Phase 2: Foundational (T004-T006)
 3. Complete Phase 3: User Story 1 (T007-T010)
-4. **STOP and VALIDATE**: `zigdu <path> --wait` scans and displays disk usage
+4. **STOP and VALIDATE**: `zdu <path> --wait` scans and displays disk usage
 5. This is the minimum viable product
 
 ### Incremental Delivery
 
 1. Setup + Foundational -> Platform layer ready
-2. Add US1 (Scan) -> Test: `zigdu /tmp --wait` shows disk usage (MVP)
+2. Add US1 (Scan) -> Test: `zdu /tmp --wait` shows disk usage (MVP)
 3. Add US2 (Cache) -> Test: second run returns instantly with cache age
 4. Add US3 (Background) -> Test: background PID displayed, next run shows fresher data
-5. Add US4 (JSON) -> Test: `zigdu /tmp --json` produces valid JSON
+5. Add US4 (JSON) -> Test: `zdu /tmp --json` produces valid JSON
 6. Add US5 (Depth/Top) -> Test: `--depth 1 --top 5` limits output correctly
 7. Add US6 (Sessions) -> Test: `--sessions` lists running scans, `--kill` stops them
 8. Add US7 (APFS) -> Test: macOS partial rescan works, Linux falls back gracefully

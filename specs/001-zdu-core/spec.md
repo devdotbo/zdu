@@ -1,6 +1,6 @@
-# Feature Specification: zigdu - Fast Disk Usage Scanner with Persistent Cache
+# Feature Specification: zdu - Fast Disk Usage Scanner with Persistent Cache
 
-**Feature Branch**: `001-zigdu-core`
+**Feature Branch**: `001-zdu-core`
 **Created**: 2026-02-13
 **Status**: Draft
 **Input**: User description: "Fast disk usage scanner with persistent cache, background daemon refresh, CLI interface with human and machine-readable output, and macOS-native optimizations for APFS volumes"
@@ -13,13 +13,13 @@
 - Q: How should paths be normalized for cache identity? → A: Canonical absolute real path (resolve symlinks in parent components, normalize slashes, make absolute)
 - Q: What is the cache eviction policy? → A: LRU with size cap (evict least-recently-used entries when total cache exceeds a configurable limit, default 1 GB)
 - Q: How should background scans be throttled? → A: OS-level priority only (low nice value + low I/O priority, let the kernel schedule)
-- Q: What observability level should the tool support? → A: Standard (--verbose flag for foreground stderr output + background processes log to ~/.zigdu/logs/). All data (cache, logs, config) co-located under ~/.zigdu/.
+- Q: What observability level should the tool support? → A: Standard (--verbose flag for foreground stderr output + background processes log to ~/.zdu/logs/). All data (cache, logs, config) co-located under ~/.zdu/.
 
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Scan Disk Usage for a Path (Priority: P1)
 
-A user runs `zigdu <path>` for the first time on a given path. Since no cached results exist, the tool scans the directory tree and displays disk usage broken down by top-level subdirectories, sorted by size descending, with a visual bar chart and total/used/free summary.
+A user runs `zdu <path>` for the first time on a given path. Since no cached results exist, the tool scans the directory tree and displays disk usage broken down by top-level subdirectories, sorted by size descending, with a visual bar chart and total/used/free summary.
 
 **Why this priority**: This is the foundational capability. Without scanning and displaying disk usage, nothing else matters. A user must be able to get an answer to "where is my disk space going?" in a single command.
 
@@ -27,26 +27,26 @@ A user runs `zigdu <path>` for the first time on a given path. Since no cached r
 
 **Acceptance Scenarios**:
 
-1. **Given** a directory path with files and subdirectories, **When** the user runs `zigdu <path> --wait`, **Then** the tool displays each subdirectory with its size, percentage of total, and a proportional bar, sorted largest first.
+1. **Given** a directory path with files and subdirectories, **When** the user runs `zdu <path> --wait`, **Then** the tool displays each subdirectory with its size, percentage of total, and a proportional bar, sorted largest first.
 2. **Given** a directory path, **When** the scan completes, **Then** the output includes total used space, total available space, and free space remaining.
-3. **Given** a path that does not exist, **When** the user runs `zigdu <nonexistent>`, **Then** the tool prints a clear error message and exits with a non-zero status code.
-4. **Given** a path the user does not have permission to read, **When** the user runs `zigdu <restricted>`, **Then** the tool scans accessible subdirectories, skips inaccessible ones with a warning, and displays results for the accessible portion.
-5. **Given** no cache exists for a path, **When** the user runs `zigdu <path>` without `--wait`, **Then** the tool performs a foreground scan and displays results, since there are no cached results to return.
+3. **Given** a path that does not exist, **When** the user runs `zdu <nonexistent>`, **Then** the tool prints a clear error message and exits with a non-zero status code.
+4. **Given** a path the user does not have permission to read, **When** the user runs `zdu <restricted>`, **Then** the tool scans accessible subdirectories, skips inaccessible ones with a warning, and displays results for the accessible portion.
+5. **Given** no cache exists for a path, **When** the user runs `zdu <path>` without `--wait`, **Then** the tool performs a foreground scan and displays results, since there are no cached results to return.
 
 ---
 
 ### User Story 2 - Instant Cached Results (Priority: P2)
 
-A user runs `zigdu <path>` on a path that has been scanned before. The tool immediately displays the cached results along with the cache age (how long ago the scan was performed), giving the user an instant answer without waiting for a rescan.
+A user runs `zdu <path>` on a path that has been scanned before. The tool immediately displays the cached results along with the cache age (how long ago the scan was performed), giving the user an instant answer without waiting for a rescan.
 
-**Why this priority**: The primary value proposition of zigdu over existing tools (du, ncdu) is speed through caching. Returning cached results instantly transforms the user experience from "wait minutes" to "answer in milliseconds."
+**Why this priority**: The primary value proposition of zdu over existing tools (du, ncdu) is speed through caching. Returning cached results instantly transforms the user experience from "wait minutes" to "answer in milliseconds."
 
 **Independent Test**: Can be tested by running a scan, then running the same command again and verifying that results appear instantly with a cache timestamp and age indicator.
 
 **Acceptance Scenarios**:
 
-1. **Given** a previously scanned path with a valid cache, **When** the user runs `zigdu <path>`, **Then** cached results are displayed within 50 milliseconds with a header showing the cache timestamp and age (e.g., "cached 2h 14m ago").
-2. **Given** a cached result, **When** the user runs `zigdu <path> --force`, **Then** the cache is discarded and a fresh scan is performed.
+1. **Given** a previously scanned path with a valid cache, **When** the user runs `zdu <path>`, **Then** cached results are displayed within 50 milliseconds with a header showing the cache timestamp and age (e.g., "cached 2h 14m ago").
+2. **Given** a cached result, **When** the user runs `zdu <path> --force`, **Then** the cache is discarded and a fresh scan is performed.
 3. **Given** a cached result, **When** the cache file is corrupted or in an incompatible format version, **Then** the tool falls back to a fresh scan and regenerates the cache.
 
 ---
@@ -55,32 +55,32 @@ A user runs `zigdu <path>` on a path that has been scanned before. The tool imme
 
 After displaying cached results, the tool automatically spawns a background process to refresh the cache. The user can continue working while the scan happens. On the next invocation, the user gets fresher results.
 
-**Why this priority**: Background refresh ensures that cached results stay reasonably fresh without the user needing to explicitly trigger rescans. This is the "set and forget" experience that makes zigdu practical for repeated use.
+**Why this priority**: Background refresh ensures that cached results stay reasonably fresh without the user needing to explicitly trigger rescans. This is the "set and forget" experience that makes zdu practical for repeated use.
 
-**Independent Test**: Can be tested by running `zigdu <path>` on a cached path, verifying the background process is spawned (PID displayed), waiting for it to complete, then running zigdu again and seeing a more recent cache timestamp.
+**Independent Test**: Can be tested by running `zdu <path>` on a cached path, verifying the background process is spawned (PID displayed), waiting for it to complete, then running zdu again and seeing a more recent cache timestamp.
 
 **Acceptance Scenarios**:
 
-1. **Given** a cached path, **When** the user runs `zigdu <path>`, **Then** a background refresh process is spawned and its PID is displayed to the user.
-2. **Given** a background refresh is already running for a path, **When** the user runs `zigdu <path>` again, **Then** the tool detects the existing process and does not spawn a duplicate.
-3. **Given** a background refresh is running, **When** the user runs `zigdu <path> --status`, **Then** the tool displays progress information including files scanned and estimated time remaining.
+1. **Given** a cached path, **When** the user runs `zdu <path>`, **Then** a background refresh process is spawned and its PID is displayed to the user.
+2. **Given** a background refresh is already running for a path, **When** the user runs `zdu <path>` again, **Then** the tool detects the existing process and does not spawn a duplicate.
+3. **Given** a background refresh is running, **When** the user runs `zdu <path> --status`, **Then** the tool displays progress information including files scanned and estimated time remaining.
 4. **Given** a background refresh is running, **When** the refresh completes, **Then** the cache file is atomically updated so concurrent readers never see partial data.
 
 ---
 
 ### User Story 4 - Machine-Readable JSON Output (Priority: P4)
 
-An automated tool (e.g., a CLI agent like Claude Code) runs `zigdu <path> --json` and receives structured output containing path sizes, cache metadata, and refresh status, enabling programmatic consumption of disk usage data.
+An automated tool (e.g., a CLI agent like Claude Code) runs `zdu <path> --json` and receives structured output containing path sizes, cache metadata, and refresh status, enabling programmatic consumption of disk usage data.
 
-**Why this priority**: JSON output enables integration with other tools and automated workflows. CLI agents need structured data to make decisions about storage management. This extends zigdu's value beyond interactive human use.
+**Why this priority**: JSON output enables integration with other tools and automated workflows. CLI agents need structured data to make decisions about storage management. This extends zdu's value beyond interactive human use.
 
-**Independent Test**: Can be tested by running `zigdu <path> --json`, parsing the output as JSON, and verifying it contains the expected fields (path, sizes, cache metadata, refresh status).
+**Independent Test**: Can be tested by running `zdu <path> --json`, parsing the output as JSON, and verifying it contains the expected fields (path, sizes, cache metadata, refresh status).
 
 **Acceptance Scenarios**:
 
-1. **Given** any valid path, **When** the user runs `zigdu <path> --json`, **Then** the output is valid JSON containing: path, cache timestamp, cache age in seconds, total/used/free bytes, and an array of entries with path/bytes/percent.
+1. **Given** any valid path, **When** the user runs `zdu <path> --json`, **Then** the output is valid JSON containing: path, cache timestamp, cache age in seconds, total/used/free bytes, and an array of entries with path/bytes/percent.
 2. **Given** a background refresh is running, **When** `--json` output is requested, **Then** the JSON includes a `refresh` object with status, PID, and estimated remaining time.
-3. **Given** no cache exists, **When** the user runs `zigdu <path> --json --wait`, **Then** the tool blocks until the scan completes and returns the full JSON result.
+3. **Given** no cache exists, **When** the user runs `zdu <path> --json --wait`, **Then** the tool blocks until the scan completes and returns the full JSON result.
 
 ---
 
@@ -90,14 +90,14 @@ A user controls the granularity of output by specifying how many levels deep to 
 
 **Why this priority**: Default output can be overwhelming on deep directory trees. Depth and top-N controls let users tune the output to their specific question - whether it is "what are the biggest top-level directories?" or "show me 3 levels deep under /Users."
 
-**Independent Test**: Can be tested by running `zigdu <path> --depth 1` and verifying only immediate children are shown, then `--depth 3` and verifying three levels appear, and `--top 5` and verifying only the 5 largest entries are shown.
+**Independent Test**: Can be tested by running `zdu <path> --depth 1` and verifying only immediate children are shown, then `--depth 3` and verifying three levels appear, and `--top 5` and verifying only the 5 largest entries are shown.
 
 **Acceptance Scenarios**:
 
-1. **Given** a directory tree, **When** the user runs `zigdu <path> --depth 1`, **Then** only immediate child directories are shown with their sizes.
-2. **Given** a directory tree, **When** the user runs `zigdu <path> --depth 3`, **Then** entries up to 3 levels deep are shown in a tree structure.
-3. **Given** a directory tree with many entries, **When** the user runs `zigdu <path> --top 5`, **Then** only the 5 largest entries are displayed.
-4. **Given** default invocation without flags, **When** the user runs `zigdu <path>`, **Then** the default depth is 3 and the default top count is 20.
+1. **Given** a directory tree, **When** the user runs `zdu <path> --depth 1`, **Then** only immediate child directories are shown with their sizes.
+2. **Given** a directory tree, **When** the user runs `zdu <path> --depth 3`, **Then** entries up to 3 levels deep are shown in a tree structure.
+3. **Given** a directory tree with many entries, **When** the user runs `zdu <path> --top 5`, **Then** only the 5 largest entries are displayed.
+4. **Given** default invocation without flags, **When** the user runs `zdu <path>`, **Then** the default depth is 3 and the default top count is 20.
 
 ---
 
@@ -107,13 +107,13 @@ A user manages active background scan sessions - listing all running scans and s
 
 **Why this priority**: With multiple background scans potentially running for different paths, users need visibility and control. This is a management capability that supports the background refresh feature.
 
-**Independent Test**: Can be tested by starting multiple scans, running `zigdu --sessions` to list them, then `zigdu --kill <pid>` to stop one, and verifying it is no longer listed.
+**Independent Test**: Can be tested by starting multiple scans, running `zdu --sessions` to list them, then `zdu --kill <pid>` to stop one, and verifying it is no longer listed.
 
 **Acceptance Scenarios**:
 
-1. **Given** one or more background scans are running, **When** the user runs `zigdu --sessions`, **Then** each active session is listed with its target path, PID, start time, and progress.
-2. **Given** an active background scan, **When** the user runs `zigdu --kill <pid>`, **Then** the scan is gracefully stopped and its temporary resources are cleaned up.
-3. **Given** no background scans are running, **When** the user runs `zigdu --sessions`, **Then** the output indicates no active sessions.
+1. **Given** one or more background scans are running, **When** the user runs `zdu --sessions`, **Then** each active session is listed with its target path, PID, start time, and progress.
+2. **Given** an active background scan, **When** the user runs `zdu --kill <pid>`, **Then** the scan is gracefully stopped and its temporary resources are cleaned up.
+3. **Given** no background scans are running, **When** the user runs `zdu --sessions`, **Then** the output indicates no active sessions.
 
 ---
 
@@ -123,13 +123,13 @@ On macOS with APFS volumes, the tool uses native filesystem change detection to 
 
 **Why this priority**: This is a platform-specific performance optimization. On macOS/APFS, the tool can check whether a cached subtree is still valid in microseconds rather than rescanning millions of files. This makes warm scans near-instant even on multi-terabyte volumes.
 
-**Independent Test**: Can be tested on macOS by scanning a path, modifying a file in one subdirectory, running zigdu again, and verifying that only the changed subtree is rescanned while unchanged subtrees are served from cache.
+**Independent Test**: Can be tested on macOS by scanning a path, modifying a file in one subdirectory, running zdu again, and verifying that only the changed subtree is rescanned while unchanged subtrees are served from cache.
 
 **Acceptance Scenarios**:
 
 1. **Given** a cached scan on macOS/APFS, **When** no files have changed since the last scan, **Then** the tool validates the cache in under 1 second without rescanning any files.
 2. **Given** a cached scan on macOS/APFS, **When** files in one subdirectory have changed, **Then** only that subtree is rescanned while all other subtrees are served from cache.
-3. **Given** a non-APFS filesystem or non-macOS platform, **When** the user runs zigdu, **Then** the tool falls back to a full rescan without errors.
+3. **Given** a non-APFS filesystem or non-macOS platform, **When** the user runs zdu, **Then** the tool falls back to a full rescan without errors.
 
 ---
 
@@ -170,7 +170,7 @@ On macOS with APFS volumes, the tool uses native filesystem change detection to 
 - **FR-022**: The tool MUST clean up background process resources (process tracking files, communication channels) on exit, whether normal or due to errors.
 - **FR-023**: The tool MUST enforce an LRU cache eviction policy, removing least-recently-used entries when total cache size exceeds a configurable cap (default: 1 GB). Eviction runs opportunistically during cache writes.
 - **FR-024**: The tool MUST support `--verbose` to emit diagnostic output (skipped paths, cache hit/miss, APFS detection, timing) to stderr during foreground operation.
-- **FR-025**: Background scan processes MUST log diagnostic output to `~/.zigdu/logs/`, one log file per session, to enable post-hoc diagnosis of background scan behavior.
+- **FR-025**: Background scan processes MUST log diagnostic output to `~/.zdu/logs/`, one log file per session, to enable post-hoc diagnosis of background scan behavior.
 
 ### Key Entities
 
@@ -195,7 +195,7 @@ On macOS with APFS volumes, the tool uses native filesystem change detection to 
 ## Assumptions
 
 - Users have standard filesystem permissions; the tool does not require elevated privileges for normal operation.
-- All persistent data is stored under a unified base directory `~/.zigdu/` with subdirectories: `cache/` for scan results, `logs/` for background process logs, and a top-level config file for user settings (e.g., cache size cap). This directory is assumed to have sufficient space.
+- All persistent data is stored under a unified base directory `~/.zdu/` with subdirectories: `cache/` for scan results, `logs/` for background process logs, and a top-level config file for user settings (e.g., cache size cap). This directory is assumed to have sufficient space.
 - Cache files for 15 million entries are expected to be under 500 MB.
 - The cache directory enforces an LRU eviction policy with a default 1 GB size cap. When a new cache write would exceed the cap, the least-recently-used entries are evicted first.
 - The tool targets macOS (APFS) and Linux (ext4, XFS, btrfs) as primary platforms. Other platforms are out of scope for the initial release.

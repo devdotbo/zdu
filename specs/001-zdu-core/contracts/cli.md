@@ -1,11 +1,11 @@
 # Contract: CLI Interface
 
-**Scope**: Defines the complete command-line interface for `zigdu` - arguments, flags, options, exit codes, and output streams.
+**Scope**: Defines the complete command-line interface for `zdu` - arguments, flags, options, exit codes, and output streams.
 
 ## Command Syntax
 
 ```
-zigdu [options] [path]
+zdu [options] [path]
 ```
 
 ## Arguments
@@ -43,7 +43,7 @@ These flags cause the tool to perform a single action and exit. They are mutuall
 | `--sessions` | List all active background scan sessions. Each entry shows: target path, PID, start time, files scanned so far, and estimated remaining time. Output goes to stdout. |
 | `--status` | Query the progress of a running background scan for the resolved path argument (or current directory). Connects to the session's Unix domain socket and retrieves progress. |
 | `--help` | Print usage information and exit. |
-| `--version` | Print version string (format: `zigdu X.Y.Z`) and exit. |
+| `--version` | Print version string (format: `zdu X.Y.Z`) and exit. |
 
 ## Exit Codes
 
@@ -71,7 +71,7 @@ These flags cause the tool to perform a single action and exit. They are mutuall
 
 - If `path` does not exist, exit with code `1` and print an error to stderr.
 - If `--depth` or `--top` receives a non-positive integer or non-integer value, exit with code `1` and print a usage hint to stderr.
-- If `--kill` receives a PID that does not correspond to a known zigdu session, exit with code `1` and print an error to stderr.
+- If `--kill` receives a PID that does not correspond to a known zdu session, exit with code `1` and print an error to stderr.
 - If mutually exclusive standalone commands are combined, exit with code `1` and print a usage hint to stderr.
 
 ## Precedence and Combination Rules

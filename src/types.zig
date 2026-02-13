@@ -165,9 +165,9 @@ pub const Config = struct {
 
     pub fn defaults() Config {
         return .{
-            .base_dir = "~/.zigdu",
-            .cache_dir = "~/.zigdu/cache",
-            .log_dir = "~/.zigdu/logs",
+            .base_dir = "~/.zdu",
+            .cache_dir = "~/.zdu/cache",
+            .log_dir = "~/.zdu/logs",
             .max_cache_bytes = 1024 * 1024 * 1024,
             .default_depth = 3,
             .default_top = 20,
@@ -221,7 +221,7 @@ pub const Config = struct {
         var out = defaults();
         var saw_cache_dir = false;
         var saw_log_dir = false;
-        const config_path = expandHome(allocator, "~/.zigdu/config") catch return out;
+        const config_path = expandHome(allocator, "~/.zdu/config") catch return out;
         defer allocator.free(config_path);
 
         const file = std.fs.cwd().openFile(config_path, .{}) catch {

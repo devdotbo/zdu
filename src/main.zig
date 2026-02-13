@@ -63,7 +63,7 @@ fn run() !u8 {
     }
 
     if (options.version) {
-        try (&stdout.interface).print("zigdu 0.1.0\n", .{});
+        try (&stdout.interface).print("zdu 0.2.0\n", .{});
         return 0;
     }
 
@@ -759,7 +759,7 @@ fn printUsage() !void {
     defer writer.interface.flush() catch {};
     const defaults = types.Config.defaults();
     try (&writer.interface).print(
-        \\Usage: zigdu [options] [path]
+        \\Usage: zdu [options] [path]
         \\
         \\Options:
         \\  --wait, -w                    wait for scan

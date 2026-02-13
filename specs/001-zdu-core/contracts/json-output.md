@@ -1,10 +1,10 @@
 # Contract: JSON Output Schema
 
-**Scope**: Defines the JSON schemas for all structured output produced by `zigdu --json` and IPC responses.
+**Scope**: Defines the JSON schemas for all structured output produced by `zdu --json` and IPC responses.
 
 ## Scan Result
 
-Returned by `zigdu [path] --json` (foreground) and the `result` IPC command (background).
+Returned by `zdu [path] --json` (foreground) and the `result` IPC command (background).
 
 ```json
 {
@@ -92,7 +92,7 @@ Each element represents a directory in the scanned tree.
 
 ## Status Response
 
-Returned by the `status` IPC command and by `zigdu [path] --status --json`.
+Returned by the `status` IPC command and by `zdu [path] --status --json`.
 
 ```json
 {
@@ -122,7 +122,7 @@ Returned by the `status` IPC command and by `zigdu [path] --status --json`.
 
 ## Cancel Response
 
-Returned by the `cancel` IPC command and by `zigdu --kill <pid> --json`.
+Returned by the `cancel` IPC command and by `zdu --kill <pid> --json`.
 
 ```json
 {
@@ -140,7 +140,7 @@ Returned by the `cancel` IPC command and by `zigdu --kill <pid> --json`.
 
 ## Sessions List Response
 
-Returned by `zigdu --sessions --json`.
+Returned by `zdu --sessions --json`.
 
 ```json
 {

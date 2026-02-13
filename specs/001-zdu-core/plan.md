@@ -1,7 +1,7 @@
-# Implementation Plan: zigdu - Fast Disk Usage Scanner with Persistent Cache
+# Implementation Plan: zdu - Fast Disk Usage Scanner with Persistent Cache
 
-**Branch**: `001-zigdu-core` | **Date**: 2026-02-13 | **Spec**: [spec.md](spec.md)
-**Input**: Feature specification from `/specs/001-zigdu-core/spec.md`
+**Branch**: `001-zdu-core` | **Date**: 2026-02-13 | **Spec**: [spec.md](spec.md)
+**Input**: Feature specification from `/specs/001-zdu-core/spec.md`
 
 ## Summary
 
@@ -11,7 +11,7 @@ A Zig-native CLI tool that scans directory trees for disk usage, persists result
 
 **Language/Version**: Zig 0.15.2 (latest stable, released 2025-10-12)
 **Primary Dependencies**: Zig standard library only (no external packages); macOS libc headers via `extern "c"` declarations for `getattrlistbulk`, `getattrlist`, `setpriority`
-**Storage**: Binary cache files under `~/.zigdu/cache/`, logs under `~/.zigdu/logs/`, config at `~/.zigdu/config`
+**Storage**: Binary cache files under `~/.zdu/cache/`, logs under `~/.zdu/logs/`, config at `~/.zdu/config`
 **Testing**: Zig built-in test framework (`zig build test`)
 **Target Platform**: macOS (APFS, HFS+) and Linux (ext4, XFS, btrfs)
 **Project Type**: single
@@ -66,7 +66,7 @@ src/
 **Structure Decision**: Single project with platform-specific code isolated in `src/platform/`. Zig's
 `builtin.os.tag` enables conditional compilation at build time. No separate test directory -- tests live
 alongside source as Zig `test` blocks, following community convention for discoverability. The build
-produces a single `zigdu` binary that acts as both CLI and (when spawned as background) daemon.
+produces a single `zdu` binary that acts as both CLI and (when spawned as background) daemon.
 
 ## Phase 0: Research (Complete)
 
@@ -98,10 +98,10 @@ Key decisions:
 
 ### Key Design Decisions
 
-- **Binary cache format**: 32-byte header (magic "ZGDU", version, timestamp, duration, entry_count) followed by variable-length entries in depth-first pre-order. Tree reconstructed on read from depth values.
+- **Binary cache format**: 32-byte header (magic "ZDU0", version, timestamp, duration, entry_count) followed by variable-length entries in depth-first pre-order. Tree reconstructed on read from depth values.
 - **Volume info**: Retrieved fresh via `statfs()`/`statvfs()` on each invocation, not persisted in cache (free/used space changes too frequently).
-- **APFS gencounts**: Stored in companion `.gencount` files alongside `.zgdu` cache files, keeping the core binary format platform-independent.
-- **Config format**: Simple key=value text file at `~/.zigdu/config`. CLI flags override config values, which override compiled defaults.
+- **APFS gencounts**: Stored in companion `.gencount` files alongside `.zdu` cache files, keeping the core binary format platform-independent.
+- **Config format**: Simple key=value text file at `~/.zdu/config`. CLI flags override config values, which override compiled defaults.
 - **Session state machine**: idle -> scanning -> completing -> done -> cleaned, with error state reachable from scanning/completing.
 
 ## Constitution Check (Post-Design)

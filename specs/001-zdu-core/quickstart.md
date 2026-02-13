@@ -1,4 +1,4 @@
-# zigdu Quickstart
+# zdu Quickstart
 
 Fast disk usage scanning with persistent cache. Zig 0.15.2 CLI targeting macOS (APFS) and Linux (ext4/XFS/btrfs).
 
@@ -15,22 +15,22 @@ zig build                    # debug build
 zig build -Doptimize=.ReleaseFast  # optimized build
 ```
 
-Output binary: `zig-out/bin/zigdu`
+Output binary: `zig-out/bin/zdu`
 
 ## Run
 
 ```bash
 # First scan (no cache)
-./zig-out/bin/zigdu /path --wait
+./zig-out/bin/zdu /path --wait
 
 # Subsequent runs (cached, instant)
-./zig-out/bin/zigdu /path
+./zig-out/bin/zdu /path
 
 # JSON output for tooling
-./zig-out/bin/zigdu /path --json
+./zig-out/bin/zdu /path --json
 
 # Control output
-./zig-out/bin/zigdu /path --depth 2 --top 10
+./zig-out/bin/zdu /path --depth 2 --top 10
 ```
 
 ## Test
@@ -62,8 +62,8 @@ src/
 ## Data Directory
 
 ```
-~/.zigdu/
-  cache/            # Binary cache files (<hash>.zgdu)
+~/.zdu/
+  cache/            # Binary cache files (<hash>.zdu)
   logs/             # Background scan logs
   config            # Optional config file (cache size cap, defaults)
 ```
