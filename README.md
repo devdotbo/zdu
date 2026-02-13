@@ -11,7 +11,7 @@ It can return fast cached output, then refresh in the background without blockin
 ## Build
 
 ```bash
-cd /Users/bioharz/git/zigdu
+cd /path/to/your/zigdu/repo
 zig build
 ```
 
