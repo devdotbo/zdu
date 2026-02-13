@@ -5,6 +5,11 @@ const pathmod = @import("./path.zig");
 const platform = @import("./platform/generic.zig");
 
 const Allocator = std.mem.Allocator;
+var stderr_buffer: [8192]u8 = undefined;
+
+fn stderrWriter() std.fs.File.Writer {
+    return std.fs.File.writer(std.fs.File.stderr(), &stderr_buffer);
+}
 
 pub const ScanSummary = struct {
     result: types.ScanResult,
@@ -47,8 +52,8 @@ pub fn scanWithProgress(
     options: ScanTaskOptions,
 ) !ScanSummary {
     if (options.verbose) {
-        const stderr = std.io.getStdErr().writer();
-        try stderr.print("[DEBUG] scan: starting {s}\n", .{path});
+        var stderr = stderrWriter();
+        try (&stderr.interface).print("[DEBUG] scan: starting {s}\n", .{path});
     }
 
     const started = std.time.milliTimestamp();
@@ -104,8 +109,8 @@ pub fn scanWithProgress(
                 warnings += 1;
                 frame.had_permission_warning = true;
                 if (options.verbose) {
-                    const stderr = std.io.getStdErr().writer();
-                    try stderr.print("[DEBUG] scan: skipped unreadable entry in {s}\n", .{frame.abs_path});
+                    var stderr = stderrWriter();
+                    try (&stderr.interface).print("[DEBUG] scan: skipped unreadable entry in {s}\n", .{frame.abs_path});
                 }
                 continue;
             },
@@ -174,8 +179,8 @@ pub fn scanWithProgress(
                     }
                     warnings += 1;
                     if (options.verbose) {
-                        const stderr = std.io.getStdErr().writer();
-                        try stderr.print("[DEBUG] scan: skipped directory {s}\n", .{child_abs});
+                        var stderr = stderrWriter();
+                        try (&stderr.interface).print("[DEBUG] scan: skipped directory {s}\n", .{child_abs});
                     }
                     continue;
                 };
@@ -223,8 +228,8 @@ pub fn scanWithProgress(
     };
 
     if (options.verbose) {
-        const stderr = std.io.getStdErr().writer();
-        try stderr.print(
+        var stderr = stderrWriter();
+        try (&stderr.interface).print(
             "[DEBUG] scan: completed {s} duration_ms={d} entries={d} warnings={d}\n",
             .{ path, duration_ms, warnings },
         );
@@ -253,14 +258,14 @@ pub fn partialScan(
     verbose: bool,
 ) !ScanSummary {
     if (verbose) {
-        const stderr = std.io.getStdErr().writer();
-        try stderr.print("[DEBUG] partial scan start path={s} stale_subtrees={d}\n", .{ path, _stale_subtrees.len });
+        var stderr = stderrWriter();
+        try (&stderr.interface).print("[DEBUG] partial scan start path={s} stale_subtrees={d}\n", .{ path, _stale_subtrees.len });
     }
 
     if (_stale_subtrees.len == 0) {
         if (verbose) {
-            const stderr = std.io.getStdErr().writer();
-            try stderr.print("[DEBUG] partial scan fallback to full scan (no stale subtrees)\n", .{});
+            var stderr = stderrWriter();
+            try (&stderr.interface).print("[DEBUG] partial scan fallback to full scan (no stale subtrees)\n", .{});
         }
         return scanWithProgress(allocator, path, cross_mount, .{
             .progress = progress,
@@ -286,8 +291,8 @@ pub fn partialScan(
 
     if (normalized_stale.items.len == 0) {
         if (verbose) {
-            const stderr = std.io.getStdErr().writer();
-            try stderr.print("[DEBUG] partial scan fallback to full scan (stale list normalized empty)\n", .{});
+            var stderr = stderrWriter();
+            try (&stderr.interface).print("[DEBUG] partial scan fallback to full scan (stale list normalized empty)\n", .{});
         }
         return scanWithProgress(allocator, path, cross_mount, .{
             .progress = progress,
@@ -300,8 +305,8 @@ pub fn partialScan(
     for (normalized_stale.items) |entry| {
         if (entry.len == 0) {
             if (verbose) {
-                const stderr = std.io.getStdErr().writer();
-                try stderr.print("[DEBUG] partial scan fallback to full scan (root dirty)\n", .{});
+                var stderr = stderrWriter();
+                try (&stderr.interface).print("[DEBUG] partial scan fallback to full scan (root dirty)\n", .{});
             }
             return scanWithProgress(allocator, path, cross_mount, .{
                 .progress = progress,
@@ -312,10 +317,10 @@ pub fn partialScan(
         }
     }
 
-    if (containsRoot(normalized_stale.items)) {
+        if (containsRoot(normalized_stale.items)) {
         if (verbose) {
-            const stderr = std.io.getStdErr().writer();
-            try stderr.print("[DEBUG] partial scan fallback to full scan (root already stale)\n", .{});
+            var stderr = stderrWriter();
+            try (&stderr.interface).print("[DEBUG] partial scan fallback to full scan (root already stale)\n", .{});
         }
         return scanWithProgress(allocator, path, cross_mount, .{
             .progress = progress,
@@ -331,8 +336,8 @@ pub fn partialScan(
     const cached = cache.readCache(allocator, path, hash, config) catch null;
     if (cached == null) {
         if (verbose) {
-            const stderr = std.io.getStdErr().writer();
-            try stderr.print("[DEBUG] partial scan fallback to full scan (missing cached baseline)\n", .{});
+            var stderr = stderrWriter();
+            try (&stderr.interface).print("[DEBUG] partial scan fallback to full scan (missing cached baseline)\n", .{});
         }
         return scanWithProgress(allocator, path, cross_mount, .{
             .progress = progress,

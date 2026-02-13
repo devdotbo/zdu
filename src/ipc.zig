@@ -157,7 +157,7 @@ pub fn queryAllSessions(allocator: Allocator, config: types.Config) ![]types.Ses
     defer dir.close();
 
     var it = dir.iterate();
-    var sessions = std.ArrayList(types.SessionInfo).init(allocator);
+    var sessions = std.array_list.Managed(types.SessionInfo).init(allocator);
 
     while (try it.next()) |entry| {
         if (entry.kind != .file) continue;

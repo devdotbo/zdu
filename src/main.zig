@@ -9,6 +9,8 @@ const ipc = @import("./ipc.zig");
 const platform = @import("./platform/generic.zig");
 
 const Allocator = std.mem.Allocator;
+var stdout_buffer: [8192]u8 = undefined;
+var stderr_buffer: [8192]u8 = undefined;
 
 const CliOptions = struct {
     path: []const u8,
@@ -35,9 +37,17 @@ pub fn main() void {
     std.process.exit(@as(u8, @intCast(exit_code)));
 }
 
+fn stdoutWriter() std.fs.File.Writer {
+    return std.fs.File.writer(std.fs.File.stdout(), &stdout_buffer);
+}
+
+fn stderrWriter() std.fs.File.Writer {
+    return std.fs.File.writer(std.fs.File.stderr(), &stderr_buffer);
+}
+
 fn run() !u8 {
-    const stderr = std.io.getStdErr().writer();
-    const stdout = std.io.getStdOut().writer();
+    var stderr = stderrWriter();
+    var stdout = stdoutWriter();
 
     var options = parseArgs() catch |err| {
         try printUsage();
@@ -51,12 +61,12 @@ fn run() !u8 {
     }
 
     if (options.version) {
-        try stdout.print("zigdu 0.1.0\n", .{});
+        try (&stdout.interface).print("zigdu 0.1.0\n", .{});
         return 0;
     }
 
     if ((@intFromBool(options.sessions) + @intFromBool(options.status) + @intFromBool(options.kill_pid != null)) > 1) {
-        try stderr.print("error: --sessions, --status, and --kill are mutually exclusive\n", .{});
+        try (&stderr.interface).print("error: --sessions, --status, and --kill are mutually exclusive\n", .{});
         return error.InvalidArgument;
     }
 
@@ -110,7 +120,7 @@ fn run() !u8 {
                     if (ts <= 0 or ts > @as(i64, @intCast(now_ts))) break :blk 0;
                     break :blk now_ts - @as(u64, @intCast(ts));
                 } else 0;
-                try stderr.print("[DEBUG] cache hit: path_hash={s}, age={d}s\n", .{ hash, age });
+                try (&stderr.interface).print("[DEBUG] cache hit: path_hash={s}, age={d}s\n", .{ hash, age });
             }
 
             if (try performApfsWarmRefresh(
@@ -137,7 +147,7 @@ fn run() !u8 {
                     .estimated_remaining_seconds = if (status) |payload| payload.estimated_remaining_seconds else null,
                 };
                 if (options.verbose) {
-                    try stderr.print("background refresh already running (pid {d})\n", .{pid});
+                    try (&stderr.interface).print("background refresh already running (pid {d})\n", .{pid});
                 }
             } else if (!options.wait and !options.force) {
                 const spawned_pid = spawnBackgroundIfIdle(
@@ -154,15 +164,15 @@ fn run() !u8 {
                 if (spawned_pid) |pid| {
                     refresh = .{ .status = "running", .pid = pid, .estimated_remaining_seconds = null };
                     if (options.verbose) {
-                        try stderr.print("background refresh started pid {d}\n", .{pid});
+                        try (&stderr.interface).print("background refresh started pid {d}\n", .{pid});
                     }
                 } else if (options.verbose) {
-                    try stderr.print("background refresh not started\n", .{});
+                    try (&stderr.interface).print("background refresh not started\n", .{});
                 }
             }
         } else |_| {
             if (options.verbose) {
-                try stderr.print("[DEBUG] cache miss for {s}\n", .{canonical_path});
+                try (&stderr.interface).print("[DEBUG] cache miss for {s}\n", .{canonical_path});
             }
         }
     }
@@ -178,13 +188,13 @@ fn run() !u8 {
         had_warnings = scan.had_warnings;
         result.cache_timestamp = null;
 
-        if (options.verbose) try stderr.print("[DEBUG] scan complete in {} ms\n", .{result.duration_ms});
+        if (options.verbose) try (&stderr.interface).print("[DEBUG] scan complete in {} ms\n", .{result.duration_ms});
         cache.writeCache(allocator, hash, &result, config) catch |err| {
             if (options.verbose) {
-                try stderr.print("warning: cache write failed ({s})\n", .{@errorName(err)});
+                try (&stderr.interface).print("warning: cache write failed ({s})\n", .{@errorName(err)});
             }
         };
-        if (options.verbose) try stderr.print("[DEBUG] scan complete (entries={d})\n", .{result.entry_count});
+        if (options.verbose) try (&stderr.interface).print("[DEBUG] scan complete (entries={d})\n", .{result.entry_count});
     }
 
     if (used_cache) {
@@ -197,7 +207,7 @@ fn run() !u8 {
     if (options.json) {
         try output.formatJson(
             allocator,
-            stdout,
+            &stdout.interface,
             &result,
             depth,
             top,
@@ -207,7 +217,7 @@ fn run() !u8 {
     } else {
         try output.formatHumanReadable(
             allocator,
-            stdout,
+            &stdout.interface,
             &result,
             depth,
             top,
@@ -220,16 +230,16 @@ fn run() !u8 {
 }
 
 fn runSessionCommands(options: *const CliOptions, allocator: Allocator, config: types.Config) !u8 {
-    const stdout = std.io.getStdOut().writer();
-    const stderr = std.io.getStdErr().writer();
+    var stdout = stdoutWriter();
+    var stderr = stderrWriter();
 
     if (options.sessions) {
         const sessions = try ipc.queryAllSessions(allocator, config);
         if (sessions.len == 0) {
             if (options.json) {
-                try output.formatSessionsJson(allocator, stdout, &[_]output.StatusJson{});
+                try output.formatSessionsJson(allocator, &stdout.interface, &[_]output.StatusJson{});
             } else {
-                try stdout.print("no active sessions\n", .{});
+                try (&stdout.interface).print("no active sessions\n", .{});
             }
             return 0;
         }
@@ -253,10 +263,10 @@ fn runSessionCommands(options: *const CliOptions, allocator: Allocator, config: 
         }
 
         if (options.json) {
-            try output.formatSessionsJson(allocator, stdout, payloads);
+            try output.formatSessionsJson(allocator, &stdout.interface, payloads);
         } else {
             for (payloads) |entry| {
-                try stdout.print(
+                try (&stdout.interface).print(
                     "{s}\tpid={d}\tstatus={s}\tfiles={d}\tbytes={d}\tremaining={?d}\n",
                     .{
                         entry.path,
@@ -282,17 +292,17 @@ fn runSessionCommands(options: *const CliOptions, allocator: Allocator, config: 
 
         const status = statusForPath(allocator, config, hash) catch {
             if (options.json) {
-                try output.formatErrorJson(allocator, stdout, "no active session for path", 1);
+                try output.formatErrorJson(allocator, &stdout.interface, "no active session for path", 1);
             } else {
-                try stderr.print("status: no active session for path {s}\n", .{canonical_path});
+                try (&stderr.interface).print("status: no active session for path {s}\n", .{canonical_path});
             }
             return 1;
         };
 
         if (options.json) {
-            try output.formatStatusJson(allocator, stdout, status);
+            try output.formatStatusJson(allocator, &stdout.interface, status);
         } else {
-            try stdout.print(
+            try (&stdout.interface).print(
                 "path: {s}\npid: {d}\nstatus: {s}\nelapsed_seconds: {d}\nfiles_scanned: {d}\nbytes_scanned: {d}\nstart_time: {s}\n",
                 .{
                     status.path,
@@ -315,9 +325,9 @@ fn runSessionCommands(options: *const CliOptions, allocator: Allocator, config: 
         const socket_path = ipc.resolveSocketPathByPid(allocator, config, target_pid) catch null;
         if (socket_path == null) {
             if (options.json) {
-                try output.formatErrorJson(allocator, stdout, "no active session for pid", 1);
+                try output.formatErrorJson(allocator, &stdout.interface, "no active session for pid", 1);
             } else {
-                try stderr.print("kill: no active session for pid {d}\n", .{target_pid});
+                try (&stderr.interface).print("kill: no active session for pid {d}\n", .{target_pid});
             }
             return 1;
         }
@@ -325,9 +335,9 @@ fn runSessionCommands(options: *const CliOptions, allocator: Allocator, config: 
 
         const response = ipc.sendCommand(allocator, socket_path.?, "cancel") catch {
             if (options.json) {
-                try output.formatErrorJson(allocator, stdout, "failed to signal session", 1);
+                try output.formatErrorJson(allocator, &stdout.interface, "failed to signal session", 1);
             } else {
-                try stderr.print("kill: failed to signal pid {d}\n", .{target_pid});
+                try (&stderr.interface).print("kill: failed to signal pid {d}\n", .{target_pid});
             }
             return 1;
         };
@@ -335,9 +345,9 @@ fn runSessionCommands(options: *const CliOptions, allocator: Allocator, config: 
 
         const parsed = parseCancelPayload(allocator, response) catch {
             if (options.json) {
-                try output.formatErrorJson(allocator, stdout, "invalid cancel response", 1);
+                try output.formatErrorJson(allocator, &stdout.interface, "invalid cancel response", 1);
             } else {
-                try stderr.print("kill: invalid response from session {d}\n", .{target_pid});
+                try (&stderr.interface).print("kill: invalid response from session {d}\n", .{target_pid});
             }
             return 1;
         };
@@ -345,9 +355,9 @@ fn runSessionCommands(options: *const CliOptions, allocator: Allocator, config: 
         defer allocator.free(parsed.status);
 
         if (options.json) {
-            try output.formatCancelJson(allocator, stdout, parsed);
+            try output.formatCancelJson(allocator, &stdout.interface, parsed);
         } else {
-            try stdout.print("pid={d} status={s}\n", .{ parsed.pid orelse target_pid, parsed.status });
+            try (&stdout.interface).print("pid={d} status={s}\n", .{ parsed.pid orelse target_pid, parsed.status });
         }
         return 0;
     }
@@ -450,8 +460,8 @@ fn performApfsWarmRefresh(
     verbose: bool,
 ) !?scanner.ScanSummary {
     if (verbose) {
-        const stderr = std.io.getStdErr().writer();
-        try stderr.print("apfs: validating subtree gencounts for {s}\n", .{path});
+        var stderr = stderrWriter();
+        try (&stderr.interface).print("apfs: validating subtree gencounts for {s}\n", .{path});
     }
 
     const current = platform.getSubtreeGencounts(allocator, path, 1) catch return null;
@@ -464,8 +474,8 @@ fn performApfsWarmRefresh(
     const previous = cache.readGencounts(allocator, path_hash, config) catch null;
     if (previous == null) {
         if (verbose) {
-            const stderr = std.io.getStdErr().writer();
-            try stderr.print("apfs: no cached gencounts for {s}\n", .{path});
+            var stderr = stderrWriter();
+            try (&stderr.interface).print("apfs: no cached gencounts for {s}\n", .{path});
         }
         try cache.writeGencounts(allocator, path_hash, current.?, config);
         return null;
@@ -477,8 +487,8 @@ fn performApfsWarmRefresh(
 
     if (!gencountRecordsDifferent(current.?, previous.?)) {
         if (verbose) {
-            const stderr = std.io.getStdErr().writer();
-            try stderr.print("apfs: cache gencounts unchanged for {s}\n", .{path});
+            var stderr = stderrWriter();
+            try (&stderr.interface).print("apfs: cache gencounts unchanged for {s}\n", .{path});
         }
         return null;
     }
@@ -490,8 +500,8 @@ fn performApfsWarmRefresh(
     }
 
     if (verbose) {
-        const stderr = std.io.getStdErr().writer();
-        try stderr.print("apfs: stale subtrees for {s}: {d}\n", .{ path, stale_subtrees.len });
+        var stderr = stderrWriter();
+        try (&stderr.interface).print("apfs: stale subtrees for {s}: {d}\n", .{ path, stale_subtrees.len });
     }
 
     const summary = try scanner.partialScan(allocator, path, stale_subtrees, config, cross_mount, null, verbose);
@@ -738,10 +748,9 @@ fn now() u64 {
 }
 
 fn printUsage() !void {
-    const out = std.io.getStdOut();
-    const writer = out.writer();
+    var writer = stdoutWriter();
     const defaults = types.Config.defaults();
-    try writer.print(
+    try (&writer.interface).print(
         \\Usage: zigdu [options] [path]
         \\
         \\Options:
