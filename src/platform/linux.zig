@@ -64,8 +64,8 @@ pub fn getVolumeInfo(allocator: std.mem.Allocator, path: []const u8) !types.Volu
 pub fn setBackgroundPriority() !void {
     var lowered = false;
 
-    const nice_result = std.os.linux.syscall1(.nice, @as(usize, @bitCast(@as(isize, 19))));
-    if (std.posix.errno(nice_result) == .SUCCESS) lowered = true;
+    const prio_result = std.os.linux.syscall3(.setpriority, 0, 0, 19);
+    if (std.posix.errno(prio_result) == .SUCCESS) lowered = true;
 
     const ioprio_result = std.os.linux.syscall3(
         .ioprio_set,

@@ -45,7 +45,11 @@ pub fn spawnBackground(
     if (pid > 0) return @intCast(pid);
     if (pid < 0) return error.ForkFailed;
 
-    std.posix.setsid() catch std.process.exit(1);
+    if (builtin.os.tag == .linux) {
+        _ = std.os.linux.setsid();
+    } else {
+        std.posix.setsid() catch std.process.exit(1);
+    }
 
     backgroundMain(path, path_hash, config, cross_mount, verbose) catch {};
     std.process.exit(0);

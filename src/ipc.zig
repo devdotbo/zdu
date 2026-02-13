@@ -67,7 +67,7 @@ pub fn startServer(context: *ServerContext) !void {
             continue;
         }
 
-        const client = try std.posix.accept(listener, null, null);
+        const client = try std.posix.accept(listener, null, null, 0);
         defer std.posix.close(client);
 
         const command = readCommand(context.allocator, client) catch continue;
@@ -122,8 +122,7 @@ pub fn sendCommand(allocator: Allocator, socket_path: []const u8, command: []con
 
     var buffer: [512]u8 = undefined;
     while (true) {
-        const read_count = c.read(fd, &buffer, buffer.len);
-        if (read_count < 0) return error.ReadFailed;
+        const read_count = std.posix.read(fd, &buffer) catch return error.ReadFailed;
         if (read_count == 0) break;
 
         var idx: usize = 0;

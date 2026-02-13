@@ -215,15 +215,31 @@ Primary contracts: `specs/001-zigdu-core/contracts/cli.md`, `specs/001-zigdu-cor
   - Session logs indicate background server thread crashed due socket setup (`fchmod` panic in `src/ipc.zig:63`) during server startup in this environment.
 
 - Cross-compile (`SC-006`) `zig build -Dtarget=x86_64-linux`
-  - Exit: `1`
-  - Failure: libc headers missing (`sys/types.h`) during C import in `src/ipc.zig` cross target.
-- 2026-02-13 follow-up loop:
-  - Implementation updates applied:
-    - `src/ipc.zig`: removed `@cImport` path usage and made socket setup `fchmod` best-effort.
-    - `src/daemon.zig`: removed `@cImport("unistd.h")` and switched to `std.posix.setsid()`.
-    - `src/platform/linux.zig`: removed `@cImport` usage and replaced background priority with syscall-based implementation.
-    - `src/ipc.zig` + `src/daemon.zig` now use `std.os.linux.getpid()` on Linux and fallback `std.c.getpid()` on non-Linux.
-  - Validation status: not yet rerun after patch; remaining tasks are re-run commands and environment evidence.
+  - 2026-02-13 01 attempt:
+    - Command: `zig build -Dtarget=x86_64-linux`
+    - Exit: `1`
+    - Error: `src/ipc.zig:125:28: error: use of undeclared identifier 'c'`
+    - Timing: `real 0.31s`, `user 0.29s`, `sys 0.34s`
+  - 2026-02-13 02 attempt:
+    - Command: `zig build -Dtarget=x86_64-linux`
+    - Exit: `1`
+    - Error: `src/daemon.zig:48:24: error: value of type 'i32' ignored` (from `std.posix.setsid()` libc-backed API)
+    - Timing: `real 0.42s`, `user 0.49s`, `sys 0.44s`
+  - 2026-02-13 03 attempt:
+    - Command: `zig build -Dtarget=x86_64-linux`
+    - Exit: `1`
+    - Error: `src/platform/linux.zig:67:48: error: enum 'os.linux.syscalls.X64' has no member named 'nice'`
+    - Timing: `real 0.39s`, `user 0.42s`, `sys 0.44s`
+  - 2026-02-13 04 attempt:
+    - Command: `zig build -Dtarget=x86_64-linux`
+    - Exit: `1`
+    - Error: `src/ipc.zig:70:37: error: expected 4 argument(s), found 3`
+    - Timing: `real 0.31s`, `user 0.35s`, `sys 0.35s`
+  - 2026-02-13 05 attempt:
+    - Command: `zig build -Dtarget=x86_64-linux`
+    - Exit: `0`
+    - Timing: `real 0.46s`, `user 0.49s`, `sys 0.44s`
+    - Result: `SC-006 PASS` (no remaining libc-cimport or stdlib API blockers)
 
 ## Completion status
 
@@ -233,4 +249,4 @@ Primary contracts: `specs/001-zigdu-core/contracts/cli.md`, `specs/001-zigdu-cor
   - `SC-002`: Executed (`7.51s`) and within 60s target
   - `SC-003`: PASS
   - `SC-004`/`SC-005`: Deferred/partial due missing explicit APFS gencount validation evidence in CLI/log path
-  - `SC-006`: BLOCKED by local cross-compilation libc availability
+  - `SC-006`: PASS (`zig build -Dtarget=x86_64-linux` exit `0`, deterministic after code fixes)

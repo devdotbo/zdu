@@ -22,13 +22,13 @@ Last updated: 2026-02-13
   - `SC-003` RSS target: ✅ pass
   - `SC-004` APFS unchanged validation: ⚠️ partial evidence
   - `SC-005` partial refresh evidence: ⚠️ partial evidence
-  - `SC-006` cross-compilation check: ⚠️ blocked (libc header dependency)
+  - `SC-006` cross-compilation check: ✅ PASS
 
 ## To-do (source of truth)
 
 - [x] T032 loop item A: remove remaining libc-headers/cimport path in platform-dependent code (`src/ipc.zig`, `src/daemon.zig`, `src/platform/linux.zig`)
 - [x] T032 loop item B: fix background socket setup so daemon sessions no longer panic on socket permission adjustment
-- [ ] T032 loop item C: rerun SC-006 and record definitive result (or explicitly document platform-blocked SKIP)
+- [x] T032 loop item C: rerun SC-006 and record definitive result (or explicitly document platform-blocked SKIP)
 - [ ] T032 loop item D: capture deterministic `SC-004`/`SC-005` evidence on APFS-capable host
 - [ ] T032 loop item E: if needed, improve warm latency to hit `< 50ms` target and re-measure
 - [ ] Keep `Agents.md` and `reports/validation-2026-02-13.md` synchronized each loop.
