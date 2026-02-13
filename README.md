@@ -1,100 +1,99 @@
 # zigdu
 
-`zigdu` is an agentic-first, AI-friendly Zig CLI for scanning directory trees with a warm cache.
-It is designed to support autonomous workflows: fast, repeatable storage inspection with machine-readable outputs,
-plus background refresh and session controls that are easy to automate.
-`zigdu` scans directory trees and keeps results warm in a local cache, then returns fast cached output and refreshes in the background without blocking the foreground command.
+Fast, cache-first disk usage scanning for humans, scripts, and autonomous agents.
 
-## Agentic and automation use cases
+`zigdu` scans directory trees, stores structured cache results, and returns warm responses quickly on repeated runs. It also supports background refresh sessions with explicit status and cancellation controls.
 
-- schedule periodic health checks across mount points or large trees
-- build agent loops that watch scan drift over time
-- consume JSON for tool routing, alerting, and diagnostics
-- cancel/resume sessions with CLI commands from orchestrators
+## Why zigdu
 
-## Requirements
+- Fast repeat checks with warm local cache
+- Script-friendly JSON output (`--json`)
+- Background refresh flow for non-blocking automation
+- Session controls for orchestration (`--sessions`, `--status`, `--kill`)
+- Clear exit codes for reliable CI/agent handling
 
-- [Zig compiler](https://ziglang.org) (to build)
-- Unix-like system with Unix sockets (Linux/macOS supported by the codebase)
+## Quick start
 
-## Build
+### Requirements
+
+- [Zig](https://ziglang.org) to build
+- macOS or Linux (Unix sockets required)
+
+### Build and run
 
 ```bash
-cd /path/to/your/zigdu/repo
+git clone <your-fork-or-origin-url>
+cd zigdu
 zig build
+./zig-out/bin/zigdu --help
 ```
 
-Run the binary:
-
-```bash
-./zig-out/bin/zigdu
-```
-
-Or run directly:
+You can also run via Zig directly:
 
 ```bash
 zig build run -- [options] [path]
 ```
 
-## Basic usage
+## First 30 seconds
 
 ```bash
-zigdu /            # scan root path (uses cache when available)
-zigdu / --wait     # block until scan completes
-zigdu / --force    # force a fresh full scan
-zigdu / --json     # emit machine-readable JSON
-zigdu / --depth 2 --top 10
-zigdu --sessions   # list active background sessions
-zigdu --status --path /tmp
-zigdu --kill 12345 # stop session for pid
+# 1) Scan once and block until completion
+./zig-out/bin/zigdu /Users/you --wait
+
+# 2) Read from cache (usually much faster)
+./zig-out/bin/zigdu /Users/you
+
+# 3) JSON for automation
+./zig-out/bin/zigdu /Users/you --json
 ```
 
-Notes:
+## Common commands
 
-- Default path is `.`.
-- `--wait` and `--force` are useful when you need fresh, deterministic output.
-- `--cross-mount` lets scan traverse filesystem boundaries.
-- Exit code `2` indicates scan completed with warnings; `1` indicates argument/runtime error.
+```bash
+# Fresh full scan
+zigdu /some/path --force --wait
 
-## Command line options
+# Limit output rendering (scan still traverses full tree)
+zigdu /some/path --depth 3 --top 20
 
-- `--help`, `-h`
-- `--version`
-- `--wait`, `-w`
-- `--force`, `-f`
-- `--json`, `-j`
-- `--verbose`, `-v`
-- `--cross-mount`
-- `--depth`, `-d <N>` (default from config)
-- `--top`, `-t <N>` (default from config)
-- `--sessions`
-- `--status`
-- `--kill <PID>` or `-k<PID>`
-- `--path` is positional and should be the path to scan / query
+# Session controls
+zigdu --sessions
+zigdu /some/path --status
+zigdu --kill 12345
+```
 
-`--sessions`, `--status`, and `--kill` are mutually exclusive.
+## Exit codes
+
+- `0`: success
+- `1`: fatal error (invalid args, root path failure, IPC/runtime error)
+- `2`: partial results with warnings (for example, inaccessible subdirectories)
+
+This makes it safe to distinguish hard failure from usable-but-partial output in scripts.
+
+## JSON output at a glance
+
+`--json` returns a single JSON object with fields such as:
+
+- `path`
+- `cache_timestamp`
+- `cache_age_seconds`
+- `scan_duration_ms`
+- `entry_count`
+- `refresh`
+- `volume`
+- `entries`
+
+Session/status commands also emit structured JSON when combined with `--json`.
 
 ## Configuration
 
-Settings are loaded from:
+Config file:
 
 ```text
 ~/.zigdu/config
 ```
 
-Defaults (from code):
-
-```text
-base_dir=~/.zigdu
-cache_dir=~/.zigdu/cache
-log_dir=~/.zigdu/logs
-max_cache_bytes=1073741824
-default_depth=3
-default_top=20
-max_log_age_days=30
-```
-
-Config format is `key = value`, one entry per line, `#` comments ignored.
+Format: `key = value`, one per line, `#` comments supported.
 
 Supported keys:
 
@@ -106,49 +105,49 @@ Supported keys:
 - `default_top`
 - `max_log_age_days`
 
-If `cache_dir` / `log_dir` are omitted, they default to `<base_dir>/cache` and `<base_dir>/logs`.
+Defaults:
 
-## Data and cache layout
+```text
+base_dir=~/.zigdu
+cache_dir=~/.zigdu/cache
+log_dir=~/.zigdu/logs
+max_cache_bytes=1073741824
+default_depth=3
+default_top=20
+max_log_age_days=30
+```
 
-- Cache result: `<cache_dir>/<path_hash>.zgdu`
-- APFS/HFS+ gencount metadata: `<cache_dir>/<path_hash>.gencount`
-- Background session pid: `<cache_dir>/<path_hash>.pid`
+## Cache and runtime files
+
+- Cache payload: `<cache_dir>/<path_hash>.zgdu`
+- APFS/HFS+ metadata: `<cache_dir>/<path_hash>.gencount`
+- Session PID: `<cache_dir>/<path_hash>.pid`
 - Session socket: `<cache_dir>/<path_hash>.sock`
 - Daemon logs: `<log_dir>/<path_hash>-YYYYMMDD-hhmmss.log`
 
-`path_hash` is a 16-char hex hash of the canonicalized path.
+`path_hash` is a 16-character hex hash of the canonicalized path.
 
-## Output format
+## Project goals
 
-### Human readable
+- Keep repeated storage introspection fast and predictable
+- Provide machine-stable outputs for agentic workflows
+- Preserve useful partial results instead of failing hard on every inaccessible subtree
 
-Default output shows:
+## CLI reference
 
-- cache timestamp and age (or live scan timestamp)
-- target path
-- max depth/top
-- volume summary
-- largest directory entries
-- optional `refresh` line for active background scans
+Primary flags and options:
 
-### JSON
+- `--help`, `-h`
+- `--version`
+- `--wait`, `-w`
+- `--force`, `-f`
+- `--json`, `-j`
+- `--verbose`, `-v`
+- `--cross-mount`
+- `--depth`, `-d <N>`
+- `--top`, `-t <N>`
+- `--sessions`
+- `--status`
+- `--kill <PID>`
 
-`--json` emits structures compatible with the CLI internals for scripts:
-
-- scan response includes `path`, `cache_timestamp`, `cache_age_seconds`, `scan_duration_ms`, `entry_count`, `refresh`, `volume`, and `entries`.
-- session/status JSON includes `pid`, `status`, `elapsed_seconds`, byte/file counters, and optional remaining ETA.
-
-## Designed for agents and AI tools
-
-`zigdu` works well in agentic and AI workflows:
-
-- structured JSON output integrates cleanly with downstream automation
-- background sessions (`--sessions`, `--status`, `--kill`) are explicitly scriptable
-- cache-first behavior supports fast iterative loops for tools that need repeated storage checks
-
-## Behavior
-
-- Cache hit: returns immediately, optionally starts background refresh when not in `--wait`/`--force`.
-- Fresh scan: full scan then writes cache and emits result.
-- Background daemon writes progress/status via Unix socket, tracks PID, and cleans session files on exit.
-- `--kill` sends a cancel command to matching session socket; completion states and errors are surfaced in CLI output.
+`--sessions`, `--status`, and `--kill` are mutually exclusive.
