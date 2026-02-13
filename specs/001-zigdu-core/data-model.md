@@ -79,15 +79,15 @@ A single node in the scan result tree, representing a directory with its cumulat
 |----------------|---------------------|---------------|----------------------------------------------------------|
 | `path`         | `[]const u8`        | 2B len + var  | Relative path from scan root (UTF-8, no null terminator) |
 | `size_bytes`   | `u64`               | 8B            | Cumulative size of all descendant files in bytes          |
-| `file_count`   | `u32`               | 4B            | Count of regular files that are direct children           |
-| `dir_count`    | `u32`               | 4B            | Count of subdirectories that are direct children          |
+| `file_count`   | `u32`               | 4B            | Total count of regular files within this directory and all descendants |
+| `dir_count`    | `u32`               | 4B            | Total count of subdirectories within this directory and all descendants |
 | `depth`        | `u8`                | 1B            | Depth level relative to scan root (root = 0)              |
 | `children`     | `[]DirectoryEntry`  | (in-memory)   | Child entries (not serialized; reconstructed from depth)  |
 
 **Invariants**:
 - `size_bytes` is the sum of all regular file sizes under this directory, recursively
-- `file_count` counts only direct children that are regular files (not recursive)
-- `dir_count` counts only direct children that are directories (not recursive)
+- `file_count` is the total count of regular files within this directory and all descendants, recursively
+- `dir_count` is the total count of subdirectories within this directory and all descendants, recursively
 - `depth` is 0 for the scan root, 1 for its immediate children, and so on
 - `path` uses forward slashes on all platforms
 - Maximum `path` length is 65535 bytes (2-byte length prefix in binary format)
@@ -198,9 +198,9 @@ A running background scan process, tracked via PID file and Unix domain socket.
 
 | Command    | Response                                                        |
 |------------|-----------------------------------------------------------------|
-| `status`   | JSON: `{"state":"scanning","files_scanned":42000,"eta_seconds":120}` |
-| `cancel`   | JSON: `{"ack":true}` then graceful shutdown                     |
-| `result`   | JSON: partial or complete scan result                           |
+| `status`   | JSON: `{"status":"running","files_scanned":42000,"bytes_scanned":1234567890,"estimated_remaining_seconds":120,"percent_complete":68.4}` |
+| `cancel`   | JSON: `{"status":"cancelled"}` then graceful shutdown           |
+| `result`   | JSON: full scan result per [json-output.md](contracts/json-output.md) schema |
 
 ---
 
@@ -212,11 +212,12 @@ Progress metrics for a running scan, reported via IPC.
 |--------------------|---------|-------------------------------------------------------|
 | `files_scanned`    | `u64`   | Number of filesystem entries processed so far          |
 | `dirs_scanned`     | `u64`   | Number of directories entered so far                   |
-| `bytes_counted`    | `u64`   | Cumulative file sizes counted so far                   |
+| `bytes_scanned`    | `u64`   | Cumulative file sizes scanned so far                   |
 | `errors_count`     | `u32`   | Number of inaccessible paths skipped                   |
-| `eta_seconds`      | `?u32`  | Estimated seconds remaining (null if not yet estimable)|
+| `estimated_remaining_seconds` | `?u32` | Estimated seconds remaining (null if not yet estimable) |
+| `percent_complete` | `?f32`  | Percentage of scan completed (0.0-100.0), null if not yet estimable |
 
-**ETA calculation**: After scanning at least 10% of the estimated total entries (based on prior cache entry count or a heuristic), compute ETA as `(elapsed_seconds / fraction_complete) * (1 - fraction_complete)`. Before 10%, report null.
+**ETA calculation**: Based on the ratio of `bytes_scanned` to the known volume used space, compute ETA as `(elapsed_seconds / fraction_complete) * (1 - fraction_complete)`. Report null when the estimate is not yet available.
 
 ---
 
@@ -418,8 +419,8 @@ Each entry is serialized contiguously after the header. Entries are ordered in *
 | 0                  | 2B      | `path_len`   | `u16`     | Length of path string in bytes                 |
 | 2                  | `path_len` | `path`    | `[path_len]u8` | Relative path from scan root (UTF-8)      |
 | 2 + path_len      | 8B      | `size_bytes` | `u64`     | Cumulative size of all descendants in bytes    |
-| 10 + path_len     | 4B      | `file_count` | `u32`     | Direct child file count                        |
-| 14 + path_len     | 4B      | `dir_count`  | `u32`     | Direct child directory count                   |
+| 10 + path_len     | 4B      | `file_count` | `u32`     | Total descendant file count (recursive)        |
+| 14 + path_len     | 4B      | `dir_count`  | `u32`     | Total descendant directory count (recursive)   |
 | 18 + path_len     | 1B      | `depth`      | `u8`      | Depth level (0 = scan root)                    |
 
 **Entry size**: `2 + path_len + 8 + 4 + 4 + 1 = 19 + path_len` bytes.
@@ -560,39 +561,47 @@ All files for a given scanned path share the same `{path_hash}` prefix, making i
 
 ## 8. JSON Output Schema
 
-When `--json` is specified, the tool outputs a JSON object conforming to this schema. This is the in-memory representation, not a persisted format.
+When `--json` is specified, the tool outputs a JSON object conforming to this schema. This is the in-memory representation, not a persisted format. The authoritative schema is defined in [json-output.md](contracts/json-output.md).
 
 ```json
 {
   "path": "/Users/bioharz",
   "cache_timestamp": "2026-02-13T14:22:01Z",
   "cache_age_seconds": 8040,
-  "scan_duration_ms": 42000,
-  "volume": {
-    "mount_point": "/",
-    "fs_type": "apfs",
-    "total_bytes": 1977614532608,
-    "used_bytes": 1759218604032,
-    "free_bytes": 186805252096
-  },
+  "scan_duration_ms": 45000,
+  "entry_count": 15000000,
   "refresh": {
     "status": "running",
     "pid": 48291,
-    "files_scanned": 4200000,
-    "eta_seconds": 120
+    "estimated_remaining_seconds": 200
   },
-  "entry_count": 15000000,
+  "volume": {
+    "total_bytes": 2000398934016,
+    "used_bytes": 1847382712320,
+    "free_bytes": 153016221696,
+    "filesystem": "apfs"
+  },
   "entries": [
     {
-      "path": "Documents",
-      "size_bytes": 1319413953536,
-      "percent": 75.0,
-      "file_count": 234000,
-      "dir_count": 12000,
+      "path": "/Users/bioharz/Library",
+      "bytes": 524288000000,
+      "percent": 28.4,
+      "file_count": 4200000,
+      "dir_count": 180000,
       "depth": 1
+    },
+    {
+      "path": "/Users/bioharz/Library/Application Support",
+      "bytes": 312000000000,
+      "percent": 16.9,
+      "file_count": 2800000,
+      "dir_count": 95000,
+      "depth": 2
     }
   ]
 }
 ```
 
-The `refresh` field is present only when a background session exists for the queried path. The `entries` array is truncated to `--top N` entries and filtered to `--depth N` depth.
+The `refresh` field is present only when a background session exists for the queried path (set to `null` otherwise). The `entries` array is truncated to `--top N` entries and filtered to `--depth N` depth.
+
+This example mirrors the authoritative schema in [json-output.md](contracts/json-output.md). The output layer converts stored relative paths to absolute paths for JSON serialization.

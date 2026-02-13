@@ -31,6 +31,7 @@ A user runs `zigdu <path>` for the first time on a given path. Since no cached r
 2. **Given** a directory path, **When** the scan completes, **Then** the output includes total used space, total available space, and free space remaining.
 3. **Given** a path that does not exist, **When** the user runs `zigdu <nonexistent>`, **Then** the tool prints a clear error message and exits with a non-zero status code.
 4. **Given** a path the user does not have permission to read, **When** the user runs `zigdu <restricted>`, **Then** the tool scans accessible subdirectories, skips inaccessible ones with a warning, and displays results for the accessible portion.
+5. **Given** no cache exists for a path, **When** the user runs `zigdu <path>` without `--wait`, **Then** the tool performs a foreground scan and displays results, since there are no cached results to return.
 
 ---
 
@@ -150,13 +151,13 @@ On macOS with APFS volumes, the tool uses native filesystem change detection to 
 - **FR-003**: The tool MUST sort output entries by size in descending order (largest first).
 - **FR-004**: The tool MUST persist scan results to a local cache so that subsequent invocations for the same path return instantly.
 - **FR-005**: The tool MUST display cache metadata (timestamp, age) when serving cached results.
-- **FR-006**: The tool MUST spawn a background process to refresh the cache automatically when cached results are displayed. The background process MUST run at low OS-level priority (elevated nice value) and low I/O priority (`IOPRIO_CLASS_IDLE` on Linux, `IOPRIO_THROTTLE` on macOS) to avoid impacting interactive workloads.
+- **FR-006**: The tool MUST spawn a background process to refresh the cache automatically when cached results are displayed. The background process MUST run at low OS-level priority (elevated nice value) and low I/O priority (`IOPRIO_CLASS_IDLE` on Linux, `PRIO_DARWIN_BG` via `setpriority()` on macOS) to avoid impacting interactive workloads.
 - **FR-007**: The tool MUST detect and prevent duplicate background processes for the same path.
 - **FR-008**: The tool MUST support `--json` output with structured data including path sizes, cache metadata, and refresh status.
 - **FR-009**: The tool MUST support `--depth N` to control the displayed directory depth (default: 3).
 - **FR-010**: The tool MUST support `--top N` to limit displayed entries to the N largest (default: 20).
-- **FR-011**: The tool MUST support `--wait` to block until a scan completes instead of returning immediately.
-- **FR-012**: The tool MUST support `--force` to discard cache and perform a fresh scan.
+- **FR-011**: The tool MUST support `--wait` to block until a scan completes instead of returning immediately. When no cache exists for the target path, the tool MUST perform a foreground scan regardless of whether `--wait` is specified, since there are no cached results to return.
+- **FR-012**: The tool MUST support `--force` to discard cache and perform a fresh scan. Implies `--wait`.
 - **FR-013**: The tool MUST support `--status` to query the progress of a running background scan.
 - **FR-014**: The tool MUST support `--sessions` to list all active background scan processes.
 - **FR-015**: The tool MUST support `--kill <pid>` to stop a running background scan.
@@ -176,7 +177,7 @@ On macOS with APFS volumes, the tool uses native filesystem change detection to 
 - **Scan Result**: A snapshot of disk usage for a path, containing the scanned path, timestamp, scan duration, total/used/free space, and a tree of directory entries each with path, size, file count, and directory count.
 - **Cache Entry**: A persisted scan result stored on disk, identified by the **canonical absolute real path** of the scanned directory (symlinks in parent components resolved, trailing slashes normalized, relative paths made absolute), with a version identifier for format compatibility.
 - **Background Session**: A running scan process identified by PID, associated with a target path, with progress state (files scanned, estimated completion) and communication capability for status queries and cancellation.
-- **Directory Entry**: A single node in the scan result tree, representing a directory with its cumulative size (all descendants), direct file count, subdirectory count, and depth level.
+- **Directory Entry**: A single node in the scan result tree, representing a directory with its cumulative size (all descendants), total file count, total subdirectory count, and depth level.
 
 ## Success Criteria *(mandatory)*
 

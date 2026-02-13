@@ -12,6 +12,7 @@ Returned by `zigdu [path] --json` (foreground) and the `result` IPC command (bac
   "cache_timestamp": "2026-02-13T14:22:01Z",
   "cache_age_seconds": 8040,
   "scan_duration_ms": 45000,
+  "entry_count": 15000000,
   "refresh": {
     "status": "running",
     "pid": 48291,
@@ -54,6 +55,7 @@ Returned by `zigdu [path] --json` (foreground) and the `result` IPC command (bac
 | `cache_timestamp` | `string` | Yes | ISO 8601 UTC timestamp of when the cached scan result was produced. Format: `YYYY-MM-DDTHH:MM:SSZ`. |
 | `cache_age_seconds` | `integer` | Yes | Number of seconds between `cache_timestamp` and the current time. Computed at output time, not stored in the cache. |
 | `scan_duration_ms` | `integer` | Yes | How long the scan took to complete, in milliseconds. |
+| `entry_count` | `integer` | Yes | Total number of directory entries in the scan tree. |
 | `refresh` | `object \| null` | Yes | Information about the background refresh process. `null` if no background refresh is running or relevant. |
 | `volume` | `object` | Yes | Volume-level storage information for the filesystem containing `path`. |
 | `entries` | `array` | Yes | Flat array of directory entries, sorted by `bytes` descending. Depth and top-N filtering are applied before output. |

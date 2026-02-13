@@ -20,7 +20,7 @@ Flags take no value. Presence enables the behavior.
 
 | Flag | Short | Description |
 |------|-------|-------------|
-| `--wait` | `-w` | Block until the scan completes instead of returning cached results and spawning a background refresh. Required on first scan if the user wants to see results immediately. |
+| `--wait` | `-w` | Block until the scan completes instead of returning cached results and spawning a background refresh. When no cache exists for the target path, the tool performs a foreground scan regardless of this flag. |
 | `--force` | `-f` | Discard any existing cache for the path and perform a fresh scan. Implies `--wait`. |
 | `--json` | `-j` | Output structured JSON to stdout instead of human-readable format. See [json-output.md](json-output.md) for the schema. |
 | `--verbose` | `-v` | Emit diagnostic output to stderr: skipped paths, cache hit/miss, APFS detection, timing, background process details. |
