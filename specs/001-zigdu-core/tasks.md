@@ -3,7 +3,7 @@
 **Input**: Design documents from `/specs/001-zigdu-core/`
 **Prerequisites**: plan.md (required), spec.md (required), research.md, data-model.md, contracts/
 
-**Tests**: Not explicitly requested in the feature specification. Test tasks are omitted.
+**Tests**: Each implementation task should include inline Zig `test` blocks alongside the code it produces (Zig community convention). Test assertions are part of the implementation, not separate tasks.
 
 **Organization**: Tasks are grouped by user story to enable independent implementation and testing of each story.
 
@@ -50,7 +50,7 @@
 
 ### Implementation for User Story 1
 
-- [ ] T007 [P] [US1] Implement core directory scanning in `src/scanner.zig`: `scan(path, config) ScanResult` using `std.Thread.Pool` with `spawnWg` for parallel traversal; each top-level subdirectory is a work item; workers use platform `DirIterator` for recursive traversal; accumulate size_bytes, file_count, dir_count per DirectoryEntry; build tree with depth values; skip symlinks (FR-016); respect filesystem boundaries by comparing device IDs unless cross_mount is set (FR-017); skip inaccessible dirs with warning to stderr (FR-018); handle deep trees iteratively with explicit stack (no recursion); accumulate file_count and dir_count recursively (same as size_bytes) -- propagate child counts upward to parent entries; detect I/O errors indicating volume disappearance during traversal, use shared atomic cancellation flag to signal all worker threads to stop gracefully, preserve any partial results
+- [ ] T007 [P] [US1] Implement core directory scanning in `src/scanner.zig`: `scan(path, config) ScanResult` using `std.Thread.Pool` with `spawnWg` for parallel traversal; each top-level subdirectory is a work item; workers use platform `DirIterator` for recursive traversal; accumulate size_bytes, file_count, dir_count per DirectoryEntry; build tree with depth values; skip symlinks (FR-016); respect filesystem boundaries by comparing device IDs unless cross_mount is set (FR-017); skip inaccessible dirs with warning to stderr (FR-018); handle deep trees iteratively with explicit stack (no recursion); accumulate file_count and dir_count recursively (same as size_bytes) -- propagate child counts upward to parent entries; detect I/O errors indicating volume disappearance during traversal, use shared atomic cancellation flag to signal all worker threads to stop gracefully, preserve any partial results; note on memory budget (SC-003): DirectoryEntry nodes represent directories, not files -- for a typical 15M-file volume with ~500K-1M directories at ~60 bytes/entry, peak memory usage should be 30-60MB, well under the 200MB target; if RSS approaches 150MB during scanning, reduce thread pool size or batch-flush intermediate results
 - [ ] T008 [P] [US1] Implement human-readable output formatting in `src/output.zig`: `formatHumanReadable(ScanResult, depth, top, writer)` rendering table with columns: size (auto-scaled bytes/KB/MB/GB/TB), percentage of parent, proportional ASCII bar (`[========  ]`), and relative path; sort entries by size descending (FR-003); header line with scanned path; footer with volume summary (total, used, free from VolumeInfo); support for cache age display (e.g., "cached 2h 14m ago") when cache_timestamp is provided
 - [ ] T009 [US1] Implement CLI entry point in `src/main.zig`: parse args using `std.process.ArgIterator` for positional path (default "."), flags --wait/-w, --force/-f, --json/-j, --verbose/-v, --cross-mount, options --depth/-d N, --top/-t N, --kill PID, standalone commands --sessions, --status, --help, --version; validate args per cli.md contract (exit code 1 for invalid); resolve path via `path.canonicalize()`; for this story: implement scan-and-display flow when no cache exists or --wait is specified; note: all flags are parsed here for completeness but handlers for --sessions, --status, and --kill are wired in Phase 8 (T024) -- until then, these code paths are parsed but not routed
 - [ ] T010 [US1] Wire end-to-end scan flow in `src/main.zig`: when path has no cache (or --wait), call `scanner.scan()`, retrieve `platform.getVolumeInfo()`, call `output.formatHumanReadable()` to stdout, print warnings to stderr for skipped paths, set exit code 0 (success) or 2 (partial results); ensure --help prints usage and --version prints "zigdu 0.1.0"
@@ -100,7 +100,7 @@
 
 ### Implementation for User Story 4
 
-- [ ] T018 [US4] Implement JSON output formatting in `src/output.zig`: `formatJson(ScanResult, ?BackgroundSession, depth, top, writer)` producing JSON per json-output.md schema; top-level fields: path, cache_timestamp (ISO 8601 UTC), cache_age_seconds, scan_duration_ms, refresh (status/pid/estimated_remaining_seconds or null), volume (total_bytes/used_bytes/free_bytes/filesystem), entries array (path/bytes/percent/file_count/dir_count/depth); also implement `formatStatusJson()`, `formatSessionsJson()`, `formatCancelJson()`, `formatErrorJson()` for standalone commands; use `std.json.stringify` or manual JSON writing with proper escaping
+- [ ] T018 [US4] Implement JSON output formatting in `src/output.zig`: `formatJson(ScanResult, ?BackgroundSession, depth, top, writer)` producing JSON per json-output.md schema; top-level fields: path, cache_timestamp (ISO 8601 UTC), cache_age_seconds, scan_duration_ms, refresh (status/pid/estimated_remaining_seconds or null), volume (total_bytes/used_bytes/free_bytes/filesystem), entries array (path/bytes/percent/file_count/dir_count/depth); also implement `formatStatusJson()`, `formatSessionsJson()`, `formatCancelJson()`, `formatErrorJson()` for standalone commands; use `std.json.stringify` or manual JSON writing with proper escaping; serialize FsType to JSON strings per data-model.md mapping (notably hfsplus -> "hfs+")
 - [ ] T019 [US4] Add --json routing in `src/main.zig`: when --json flag is set, call `output.formatJson()` instead of `output.formatHumanReadable()` for scan results; route --sessions through `formatSessionsJson()`, --status through `formatStatusJson()`, errors through `formatErrorJson()`; ensure stderr stays clean (no mixing of human text into stdout when --json is active)
 
 **Checkpoint**: `zigdu <path> --json` produces valid, parseable JSON matching the contract schema
@@ -159,10 +159,10 @@
 
 **Purpose**: Config file support, verbose logging, and final validation
 
-- [ ] T029 [P] Implement Config file loading in `src/types.zig`: `Config.load() Config` reading `~/.zigdu/config` key=value format, parsing each known key (cache_dir, log_dir, max_cache_bytes, default_depth, default_top), applying validation rules V-030..V-033 (clamp out-of-range values with warning to stderr), creating `~/.zigdu/`, `cache/`, `logs/` directories if they do not exist; called at startup in main.zig before any other operation
+- [ ] T029 [P] Implement Config file loading in `src/types.zig`: `Config.load() Config` reading `~/.zigdu/config` key=value format, parsing each known key (cache_dir, log_dir, max_cache_bytes, default_depth, default_top), applying validation rules V-030..V-033 (clamp out-of-range values with warning to stderr), creating `~/.zigdu/`, `cache/`, `logs/` directories if they do not exist; add `max_log_age_days` config key (default: 30, minimum: 1) and on startup delete log files in `{log_dir}/` older than the configured age; called at startup in main.zig before any other operation
 - [ ] T030 [P] Implement verbose diagnostic logging across modules: in `src/main.zig` pass verbose flag through to scanner and cache; scanner logs to stderr: cache hit/miss, APFS detection, skipped paths, timing; daemon writes structured log lines (`[INFO]`/`[WARN]`/`[DEBUG]` prefixed with ISO 8601 timestamp) to `{log_dir}/{path_hash}-{timestamp}.log` per ipc-protocol.md log format; one log file per background session (FR-025)
-- [ ] T031 Run quickstart.md validation: build with `zig build`, run `zigdu /tmp --wait`, verify human-readable output; run `zigdu /tmp --json --wait`, verify valid JSON; run `zigdu /tmp` (cached), verify instant return with cache age; run `zig build test`, verify all test blocks pass
-- [ ] T032 Run performance validation for success criteria: measure cached result retrieval time and verify <50ms (SC-001); time a cold scan on a large directory and report duration vs 60s target (SC-002); monitor RSS memory during scan and verify <200MB (SC-003); on macOS/APFS, time cache validation for unchanged volume and verify <1s (SC-004); on macOS/APFS, modify one subtree, run warm scan, and verify partial rescan completes in <10s (SC-005)
+- [ ] T031 Run quickstart.md validation: build with `zig build`, run `zigdu /tmp --wait`, verify human-readable output; run `zigdu /tmp --json --wait`, verify valid JSON; run `zigdu /tmp` (cached), verify instant return with cache age; run `zig build test`, verify all inline test blocks pass (test blocks are written as part of each implementation task, not as separate tasks)
+- [ ] T032 Run performance and cross-platform validation for success criteria: measure cached result retrieval time and verify <50ms (SC-001); time a cold scan on a large directory and report duration vs 60s target (SC-002); monitor RSS memory during scan and verify <200MB (SC-003); on macOS/APFS, time cache validation for unchanged volume and verify <1s (SC-004); on macOS/APFS, modify one subtree, run warm scan, and verify partial rescan completes in <10s (SC-005); verify `zig build -Dtarget=x86_64-linux` cross-compiles without errors (SC-006); verify `zigdu --help` and `zigdu --version` output format matches cli.md contract on both targets
 
 ---
 
@@ -190,17 +190,16 @@ Phase 1 (Setup) ──> Phase 2 (Foundational) ──> Phase 3 (US1: Scan)
                                           v         v         v
                                     Phase 4     Phase 6    Phase 7
                                     (US2:Cache) (US4:JSON) (US5:Depth)
-                                          │
-                                          v
-                                    Phase 5 (US3: Background)
-                                          │
-                                          v
-                                    Phase 8 (US6: Sessions)
-                                          │
-                                    Phase 9 (US7: APFS) [also needs US2]
-                                          │
-                                          v
-                                    Phase 10 (Polish)
+                                      │   │
+                              ┌───────┘   └───────────────┐
+                              v                           v
+                        Phase 5 (US3: Background)   Phase 9 (US7: APFS)
+                              │
+                              v
+                        Phase 8 (US6: Sessions)
+                              │
+                              v
+                        Phase 10 (Polish) [depends on all phases]
 ```
 
 ### Within Each User Story

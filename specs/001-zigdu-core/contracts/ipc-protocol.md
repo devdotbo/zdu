@@ -41,7 +41,7 @@ status\n
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `status` | `string` | One of: `"running"`, `"finalizing"`, `"complete"`, `"error"`. `"finalizing"` means the scan is done traversing and is writing the cache. |
+| `status` | `string` | One of: `"running"`, `"completing"`, `"complete"`, `"error"`. `"completing"` means the scan is done traversing and is writing the cache (maps to `SessionState.completing`). |
 | `files_scanned` | `integer` | Number of files and directories enumerated so far. |
 | `bytes_scanned` | `integer` | Cumulative size in bytes of all files scanned so far. |
 | `estimated_remaining_seconds` | `integer \| null` | Estimated seconds until completion. `null` if the estimate is not yet available (early in the scan). |

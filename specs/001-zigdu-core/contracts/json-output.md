@@ -88,7 +88,7 @@ Each element represents a directory in the scanned tree.
 | `percent` | `number` | Yes | Percentage of the scanned path's total size represented by this entry. Range: 0.0-100.0. Rounded to one decimal place. |
 | `file_count` | `integer` | Yes | Total number of regular files within this directory and its descendants. |
 | `dir_count` | `integer` | Yes | Total number of subdirectories within this directory and its descendants. |
-| `depth` | `integer` | Yes | Depth relative to the scanned path. Immediate children are depth `1`, their children are depth `2`, etc. |
+| `depth` | `integer` | Yes | Depth relative to the scanned path. The root entry (the scanned path itself) has depth `0` but is excluded from the `entries` array (its data is represented by the top-level fields). Immediate children are depth `1`, their children are depth `2`, etc. |
 
 ## Status Response
 
@@ -112,7 +112,7 @@ Returned by the `status` IPC command and by `zigdu [path] --status --json`.
 |-------|------|----------|-------------|
 | `path` | `string` | Yes | The canonical path being scanned. |
 | `pid` | `integer` | Yes | PID of the background scan process. |
-| `status` | `string` | Yes | One of: `"running"`, `"finalizing"`, `"complete"`, `"error"`. |
+| `status` | `string` | Yes | One of: `"running"`, `"completing"`, `"complete"`, `"error"`. Maps to `SessionState` enum values. |
 | `start_time` | `string` | Yes | ISO 8601 UTC timestamp of when the background process started. |
 | `elapsed_seconds` | `integer` | Yes | Seconds elapsed since the scan started. |
 | `files_scanned` | `integer` | Yes | Number of files and directories enumerated so far. |

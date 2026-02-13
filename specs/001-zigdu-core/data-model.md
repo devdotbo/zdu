@@ -169,6 +169,17 @@ FsType = enum(u8) {
 };
 ```
 
+**JSON serialization**: When serializing `FsType` to JSON (for `volume.filesystem` in json-output.md), use the following mapping:
+
+| Enum Variant | JSON String |
+|-------------|-------------|
+| `apfs`      | `"apfs"`    |
+| `hfsplus`   | `"hfs+"`    |
+| `ext4`      | `"ext4"`    |
+| `xfs`       | `"xfs"`     |
+| `btrfs`     | `"btrfs"`   |
+| `other`     | raw system identifier string (e.g., `"tmpfs"`, `"nfs"`) |
+
 **Retrieval**: On macOS, use `statfs()`. On Linux, use `statvfs()`. The `fs_type` is derived from the filesystem type string (`f_fstypename` on macOS, `/proc/mounts` or `f_type` from `statfs` on Linux).
 
 **Invariant**: `used_bytes + free_bytes <= total_bytes` (may not be exactly equal due to reserved blocks).
@@ -210,20 +221,22 @@ Progress metrics for a running scan, reported via IPC.
 
 | Field              | Type    | Description                                           |
 |--------------------|---------|-------------------------------------------------------|
-| `files_scanned`    | `u64`   | Number of filesystem entries processed so far          |
-| `dirs_scanned`     | `u64`   | Number of directories entered so far                   |
-| `bytes_scanned`    | `u64`   | Cumulative file sizes scanned so far                   |
-| `errors_count`     | `u32`   | Number of inaccessible paths skipped                   |
-| `estimated_remaining_seconds` | `?u32` | Estimated seconds remaining (null if not yet estimable) |
-| `percent_complete` | `?f32`  | Percentage of scan completed (0.0-100.0), null if not yet estimable |
+| Field              | Type    | Exposed via IPC/JSON | Description                                    |
+|--------------------|---------|----------------------|------------------------------------------------|
+| `files_scanned`    | `u64`   | Yes                  | Number of filesystem entries processed so far  |
+| `dirs_scanned`     | `u64`   | No (internal only)   | Number of directories entered so far           |
+| `bytes_scanned`    | `u64`   | Yes                  | Cumulative file sizes scanned so far           |
+| `errors_count`     | `u32`   | No (internal only)   | Number of inaccessible paths skipped           |
+| `estimated_remaining_seconds` | `?u32` | Yes          | Estimated seconds remaining (null if not yet estimable) |
+| `percent_complete` | `?f32`  | Yes                  | Percentage of scan completed (0.0-100.0), null if not yet estimable |
 
-**ETA calculation**: Based on the ratio of `bytes_scanned` to the known volume used space, compute ETA as `(elapsed_seconds / fraction_complete) * (1 - fraction_complete)`. Report null when the estimate is not yet available.
+**ETA calculation**: Based on the ratio of `bytes_scanned` to the known volume used space, compute ETA as `(elapsed_seconds / fraction_complete) * (1 - fraction_complete)`. Report `null` when the estimate is not yet available (early in scan with insufficient data) or when volume used space cannot be determined (e.g., `VolumeInfo` retrieval failed). In such cases, `percent_complete` is also `null`.
 
 ---
 
 ### 2.8 Config
 
-User-configurable settings, loaded from `~/.zigdu/config` (TOML-like key=value format).
+User-configurable settings, loaded from `~/.zigdu/config` (plain key=value text format, one entry per line, `#` prefix for comments, blank lines ignored).
 
 | Field              | Type      | Default            | Description                                      |
 |--------------------|-----------|--------------------|--------------------------------------------------|
@@ -233,6 +246,7 @@ User-configurable settings, loaded from `~/.zigdu/config` (TOML-like key=value f
 | `max_cache_bytes`  | `u64`     | 1073741824 (1 GB)  | Maximum total size of all cache files             |
 | `default_depth`    | `u8`      | 3                  | Default `--depth` value when not specified        |
 | `default_top`      | `u16`     | 20                 | Default `--top` value when not specified          |
+| `max_log_age_days` | `u16`     | 30                 | Delete log files older than this many days on startup |
 
 **Config file format** (`~/.zigdu/config`):
 
@@ -347,6 +361,18 @@ SessionState = enum(u8) {
 };
 ```
 
+**Status vocabulary mapping**: The internal `SessionState` is mapped to different string values depending on context:
+
+| SessionState | IPC `status` field | JSON `refresh.status` | Notes |
+|-------------|--------------------|-----------------------|-------|
+| `idle`      | (not reachable)    | `"idle"`              | Background process exists but scan not yet started |
+| `scanning`  | `"running"`        | `"running"`           | Active traversal |
+| `completing`| `"completing"`     | `"running"`           | Writing cache; still "running" from refresh perspective |
+| `done`      | `"complete"`       | `"idle"`              | Completed, awaiting cleanup |
+| `err`       | `"error"`          | `"none"`              | Failed; treated as no active refresh |
+| `cleaned`   | (not reachable)    | `"none"`              | Process exited |
+| (no session)| (no socket)        | `"none"`              | No background process exists |
+
 **Transition rules**:
 
 | From         | To           | Trigger                                                    |
@@ -459,7 +485,7 @@ For a scan with 15 million entries and an average path length of 30 bytes:
 - Per entry: 19 + 30 = 49 bytes average
 - Total: 32 + (15,000,000 * 49) = ~700 MB
 
-To meet the <500 MB target (from spec assumptions), paths should be stored relative to the scan root (reducing average path length) and common prefixes should be short. With an average relative path of 20 bytes, total is ~425 MB.
+To meet the <500 MB target (from spec assumptions), paths are stored relative to the scan root (reducing average path length). With an average relative path of 20 bytes, total is ~425 MB. Implementation note: if average relative path length exceeds 14 bytes on a 15M-entry volume, the 500MB budget may be exceeded. The cache writer (T011) should log a warning via `--verbose` when a cache file exceeds 450 MB, and the LRU eviction (T013) will handle cleanup if the total cache cap is exceeded.
 
 ### 5.7 Reading Strategy
 
