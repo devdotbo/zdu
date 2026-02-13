@@ -1,0 +1,21 @@
+# General artifacts
+.DS_Store
+Thumbs.db
+*.tmp
+*.swp
+.vscode/
+.idea/
+
+# Zig build artifacts
+zig-cache/
+.zig-cache/
+build/
+zig-out/
+zigdu
+
+# Logs
+*.log
+
+# Environment
+.env
+.env.*
