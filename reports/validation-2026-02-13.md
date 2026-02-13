@@ -268,3 +268,58 @@ Primary contracts: `specs/001-zigdu-core/contracts/cli.md`, `specs/001-zigdu-cor
   - `SC-004`: PASS (cache gencount unchanged rerun observed)
   - `SC-005`: PASS (stale subtree rerun observed after mutation)
   - `SC-006`: PASS (`zig build -Dtarget=x86_64-linux` exit `0`, deterministic after code fixes)
+
+## 2026-02-13 post-completion verification loop
+
+- `git status --short`
+  - Exit: `0`
+  - Output: clean at loop start
+
+- `zig build`
+  - Exit: `0`
+  - Timing: not reported by command
+
+- `zig build test`
+  - Exit: `0`
+  - Timing: not reported by command
+
+- `/usr/bin/time -p zig build -Dtarget=x86_64-linux`
+  - Exit: `0`
+  - Timing:
+    - `real 0.14`
+    - `user 0.04`
+    - `sys 0.07`
+
+- `for i in 1 2 3 4 5; do /usr/bin/time -p ./zig-out/bin/zigdu /tmp; done` (first run after cross-target artifact build)
+  - Overall command exit: `0`
+  - Observed blocker on each run due host/target mismatch (`linux` artifact on `macOS`):
+    - `run 1` -> `Exit: 126`, `real 0.00`, `user 0.00`, `sys 0.00`
+    - `run 2` -> `Exit: 126`, `real 0.00`, `user 0.00`, `sys 0.00`
+    - `run 3` -> `Exit: 126`, `real 0.00`, `user 0.00`, `sys 0.00`
+    - `run 4` -> `Exit: 126`, `real 0.00`, `user 0.00`, `sys 0.00`
+    - `run 5` -> `Exit: 126`, `real 0.00`, `user 0.00`, `sys 0.00`
+
+- `for i ...` warm-latency rerun on native artifact (`/usr/bin/time -p ./zig-out/bin/zigdu /tmp` with per-run capture)
+  - `run 1 exit=2 real=0.17 user=0.02 sys=0.11`
+  - `run 2 exit=2 real=0.15 user=0.01 sys=0.12`
+  - `run 3 exit=2 real=0.15 user=0.01 sys=0.13`
+  - `run 4 exit=2 real=0.16 user=0.01 sys=0.13`
+  - `run 5 exit=2 real=0.18 user=0.01 sys=0.13`
+
+- `ls -1t ~/.zigdu/logs | head -n 10`
+  - Exit: `0`
+  - Latest files:
+    - `272f2f823f61b8d2-+3996+2+13-+19+28+25.log`
+    - `dd0c94b24e910ab3-+3996+2+13-+19+28+15.log`
+    - `272f2f823f61b8d2-+3996+2+13-+19+27+45.log`
+    - `272f2f823f61b8d2-+3996+2+13-+19+27+43.log`
+    - `272f2f823f61b8d2-+3996+2+13-+19+27+1.log`
+    - `272f2f823f61b8d2-+3996+2+13-+19+26+58.log`
+    - `272f2f823f61b8d2-+3996+2+13-+19+26+53.log`
+    - `272f2f823f61b8d2-+3996+2+13-+19+26+50.log`
+    - `dd0c94b24e910ab3-+3996+2+13-+19+11+16.log`
+    - `dd0c94b24e910ab3-+3996+2+13-+19+11+3.log`
+
+- `rg -n "apfs: cache gencounts unchanged|apfs: stale subtrees|stale scan" ~/.zigdu/logs 2>/dev/null || true`
+  - Exit: `0` (forced by `|| true`)
+  - Matches: none
