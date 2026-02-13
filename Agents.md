@@ -54,6 +54,12 @@ Last updated: 2026-02-13
    - Reproduced APFS unchanged and stale-subtree behavior deterministically on a clean cache state.
    - Confirmed SC-006 cross-compilation remains successful and recorded all results in `reports/validation-2026-02-13.md`.
 7. 2026-02-13 — fixed scanner entry ownership leak in `src/scanner.zig` by freeing `DirIterator.next()`-allocated names at loop scope boundaries, replacing the background log leak noise seen in debug output.
+8. 2026-02-13 — finalization loop completed:
+   - Rebuilt native artifact successfully (`zig build`).
+   - SC-001 warm loop over `/tmp/zigdu-fixture` achieved `real=0.00` on all 5 runs with exit `0`.
+   - SC-004/SC-005 APFS fixtures produced expected `cache gencounts unchanged` and `stale subtrees` markers.
+   - SC-006 cross-compile succeeded (`zig build -Dtarget=x86_64-linux`).
+   - Fresh logs checked with no `error(gpa)` / `leaked` markers after the leak fix.
 
 ## Web research notes (project-relevant unknowns)
 

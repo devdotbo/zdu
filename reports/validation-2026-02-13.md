@@ -415,6 +415,46 @@ Executed under clean native artifact after APFS rerun rebuild:
 - `T032`: PASS (SC-001..SC-006 satisfied)
 - `AGENTS.md` and this report updated with strict closeout evidence to resolve command-output-only APFS traceability.
 
+## 2026-02-13 finalization loop completion (post-cleanup)
+
+- `zig build`
+  - Exit: `0` (scanner cleanup compiles cleanly)
+
+- `SC-001` on `/tmp/zigdu-fixture`
+  - `./zig-out/bin/zigdu /tmp/zigdu-fixture --force --wait`
+  - Exit: `0`
+  - Warm 5-run median check:
+    - Runs: `0.00, 0.00, 0.00, 0.00, 0.00`
+    - Exit codes: all `0`
+    - Target `< 0.05s`: PASS
+
+- `SC-004` unchanged APFS warm check on `/tmp/zigdu-fixture`
+  - Command: `./zig-out/bin/zigdu /tmp/zigdu-fixture --verbose`
+  - Exit: `0`
+  - Marker observed: `apfs: cache gencounts unchanged for /private/tmp/zigdu-fixture`
+
+- `SC-005` stale-subtree APFS check on `/tmp/zigdu-fixture`
+  - Mutation: `touch /tmp/zigdu-fixture/branch_a`
+  - Command: `./zig-out/bin/zigdu /tmp/zigdu-fixture --verbose`
+  - Exit: `0`
+  - Marker observed: `apfs: stale subtrees for /private/tmp/zigdu-fixture: 1`
+
+- `SC-006` cross-compilation
+  - Command: `zig build -Dtarget=x86_64-linux`
+  - Exit: `0`
+  - Timing: `real 0.44`, `user 0.48`, `sys 0.49`
+
+- Fresh log audit
+  - Latest log: `cd4c28597a3a3ad1-+3996+2+13-+19+54+26.log`
+  - `rg -n "error(gpa)|leaked|memory address"`: no matches
+  - `rg -n "apfs: cache gencounts unchanged|apfs: stale subtrees"`: present as expected in normal APFS markers
+
+### Final completion outcome (finalization loop)
+
+- `T031`: PASS
+- `T032`: PASS
+- Project readiness: **READY**
+
 ## 2026-02-13 scan-loop cleanup pass (post-finalization)
 
 - `src/scanner.zig` correction applied:

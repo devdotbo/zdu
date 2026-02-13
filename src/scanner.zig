@@ -205,12 +205,7 @@ pub fn scanWithProgress(
                     .iter = child_iter,
                     .children = try std.array_list.Managed(*types.DirectoryEntry).initCapacity(allocator, 0),
                     .had_permission_warning = false,
-                }) catch {
-                    allocator.free(child_abs);
-                    allocator.free(child_rel);
-                    allocator.destroy(child_node);
-                    return error.OutOfMemory;
-                };
+                });
                 if (active) |progress| {
                     _ = progress.dirs_scanned.fetchAdd(1, .monotonic);
                 }
