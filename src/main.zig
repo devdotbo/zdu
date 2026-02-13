@@ -92,7 +92,11 @@ fn run() !u8 {
     var used_cache = false;
     var served_from_cache = false;
     var had_warnings = false;
-    var refresh: ?output.RefreshInfo = null;
+    var refresh: ?output.RefreshInfo = .{
+        .status = "none",
+        .pid = null,
+        .estimated_remaining_seconds = null,
+    };
 
     if (use_cache) {
         if (cache.readCache(allocator, canonical_path, hash, config)) |cached| {
@@ -106,10 +110,18 @@ fn run() !u8 {
                     if (ts <= 0 or ts > @as(i64, @intCast(now_ts))) break :blk 0;
                     break :blk now_ts - @as(u64, @intCast(ts));
                 } else 0;
-                try stderr.print("cache hit: {s}, age={d}s\n", .{ hash, age });
+                try stderr.print("[DEBUG] cache hit: path_hash={s}, age={d}s\n", .{ hash, age });
             }
 
-            if (try performApfsWarmRefresh(allocator, canonical_path, hash, &result, config, options.cross_mount) catch null) |summary| {
+            if (try performApfsWarmRefresh(
+                allocator,
+                canonical_path,
+                hash,
+                &result,
+                config,
+                options.cross_mount,
+                options.verbose,
+            ) catch null) |summary| {
                 result = summary.result;
                 result.cache_timestamp = null;
                 had_warnings = summary.had_warnings;
@@ -118,8 +130,9 @@ fn run() !u8 {
 
             if (daemon.isDuplicate(allocator, hash, config) catch null) |pid| {
                 const status = statusFromPid(allocator, config, pid) catch null;
+                const normalized_status = if (status) |payload| normalizeRefreshStatus(payload.status) else "running";
                 refresh = .{
-                    .status = if (status) |payload| payload.status else "running",
+                    .status = normalized_status,
                     .pid = pid,
                     .estimated_remaining_seconds = if (status) |payload| payload.estimated_remaining_seconds else null,
                 };
@@ -147,23 +160,31 @@ fn run() !u8 {
                     try stderr.print("background refresh not started\n", .{});
                 }
             }
-        } else |_| {}
+        } else |_| {
+            if (options.verbose) {
+                try stderr.print("[DEBUG] cache miss for {s}\n", .{canonical_path});
+            }
+        }
     }
 
     if (!used_cache) {
-        if (options.verbose) try stderr.print("scanning path: {s}\n", .{canonical_path});
-
-        const scan = try scanner.scan(allocator, canonical_path, config, options.cross_mount);
+        const scan = try scanner.scanWithProgress(
+            allocator,
+            canonical_path,
+            options.cross_mount,
+            .{ .verbose = options.verbose },
+        );
         result = scan.result;
         had_warnings = scan.had_warnings;
         result.cache_timestamp = null;
 
-        if (options.verbose) try stderr.print("scan complete in {} ms\n", .{result.duration_ms});
+        if (options.verbose) try stderr.print("[DEBUG] scan complete in {} ms\n", .{result.duration_ms});
         cache.writeCache(allocator, hash, &result, config) catch |err| {
             if (options.verbose) {
                 try stderr.print("warning: cache write failed ({s})\n", .{@errorName(err)});
             }
         };
+        if (options.verbose) try stderr.print("[DEBUG] scan complete (entries={d})\n", .{result.entry_count});
     }
 
     if (used_cache) {
@@ -400,24 +421,19 @@ fn spawnBackgroundIfIdle(
     canonical_path: []const u8,
     path_hash: []const u8,
     config: types.Config,
-    depth: u8,
-    top: u16,
+    _depth: u8,
+    _top: u16,
     cross_mount: bool,
     verbose: bool,
     force: bool,
 ) !?u32 {
-    _ = depth;
-    _ = top;
-    _ = force;
-    _ = verbose;
-
     if (daemon.isDuplicate(allocator, path_hash, config) catch null != null) return null;
     return try daemon.spawnBackground(
         canonical_path,
         path_hash,
         config,
-        depth,
-        top,
+        _depth,
+        _top,
         cross_mount,
         verbose,
         force,
@@ -431,7 +447,13 @@ fn performApfsWarmRefresh(
     cached: *types.ScanResult,
     config: types.Config,
     cross_mount: bool,
+    verbose: bool,
 ) !?scanner.ScanSummary {
+    if (verbose) {
+        const stderr = std.io.getStdErr().writer();
+        try stderr.print("apfs: validating subtree gencounts for {s}\n", .{path});
+    }
+
     const current = platform.getSubtreeGencounts(allocator, path, 1) catch return null;
     if (current == null) return null;
     defer {
@@ -441,6 +463,10 @@ fn performApfsWarmRefresh(
 
     const previous = cache.readGencounts(allocator, path_hash, config) catch null;
     if (previous == null) {
+        if (verbose) {
+            const stderr = std.io.getStdErr().writer();
+            try stderr.print("apfs: no cached gencounts for {s}\n", .{path});
+        }
         try cache.writeGencounts(allocator, path_hash, current.?, config);
         return null;
     }
@@ -450,6 +476,10 @@ fn performApfsWarmRefresh(
     }
 
     if (!gencountRecordsDifferent(current.?, previous.?)) {
+        if (verbose) {
+            const stderr = std.io.getStdErr().writer();
+            try stderr.print("apfs: cache gencounts unchanged for {s}\n", .{path});
+        }
         return null;
     }
 
@@ -459,7 +489,12 @@ fn performApfsWarmRefresh(
         allocator.free(stale_subtrees);
     }
 
-    const summary = try scanner.partialScan(allocator, path, stale_subtrees, config, cross_mount, null);
+    if (verbose) {
+        const stderr = std.io.getStdErr().writer();
+        try stderr.print("apfs: stale subtrees for {s}: {d}\n", .{ path, stale_subtrees.len });
+    }
+
+    const summary = try scanner.partialScan(allocator, path, stale_subtrees, config, cross_mount, null, verbose);
     cached.* = summary.result;
     try cache.writeCache(allocator, path_hash, &summary.result, config);
     try cache.writeGencounts(allocator, path_hash, current.?, config);
@@ -489,11 +524,120 @@ fn detectStaleSubtrees(
     current: []const types.GencountRecord,
     previous: []const types.GencountRecord,
 ) ![][]const u8 {
-    // Fallback conservative behavior: when we can't map per-subtree granularity yet,
-    // preserve compatibility by rescanning whole tree.
-    _ = current;
-    _ = previous;
-    return try allocator.alloc([]const u8, 0);
+    var stale = std.ArrayList([]const u8).init(allocator);
+    var success = false;
+    defer if (!success) {
+        for (stale.items) |entry| allocator.free(entry);
+        stale.deinit();
+    };
+
+    for (current) |record| {
+        const prior = findGencountValue(previous, record.path);
+        if (prior == null or prior.? != record.value) {
+            if (!isDuplicatePath(stale.items, record.path)) {
+                try stale.append(try allocator.dupe(u8, record.path));
+            }
+        }
+    }
+
+    for (previous) |record| {
+        if (findGencountValue(current, record.path) != null) continue;
+        const parent = std.fs.path.dirname(record.path) orelse "";
+        const parent_path = try allocator.dupe(u8, parent);
+        if (!isDuplicatePath(stale.items, parent_path)) {
+            try stale.append(parent_path);
+        } else {
+            allocator.free(parent_path);
+        }
+    }
+
+    if (stale.items.len == 0) {
+        success = true;
+        defer stale.deinit();
+        return try allocator.alloc([]const u8, 0);
+    }
+
+    std.mem.sort([]const u8, stale.items, {}, struct {
+        fn lessThan(_: void, left: []const u8, right: []const u8) bool {
+            if (left.len != right.len) return left.len < right.len;
+            return std.mem.lessThan(u8, left, right);
+        }
+    }.lessThan);
+
+    var stale_output = try std.ArrayList([]const u8).initCapacity(allocator, stale.items.len);
+    for (stale.items) |candidate| {
+        if (isEmptyPath(candidate)) {
+            stale_output.clearRetainingCapacity();
+            try stale_output.append(candidate);
+            break;
+        }
+
+        var skip = false;
+        for (stale_output.items) |ancestor| {
+            if (ancestor.len == 0) {
+                skip = true;
+                break;
+            }
+            if (isSubtreeOf(candidate, ancestor)) {
+                skip = true;
+                break;
+            }
+        }
+        if (!skip) {
+            try stale_output.append(candidate);
+        }
+    }
+
+    if (stale_output.items.len == 0) {
+        for (stale.items) |entry| allocator.free(entry);
+        stale.deinit();
+        success = true;
+        return try allocator.alloc([]const u8, 0);
+    }
+
+    for (stale.items) |entry| {
+        if (!isDuplicatePath(stale_output.items, entry)) {
+            allocator.free(entry);
+        }
+    }
+    stale.deinit();
+
+    const result = try allocator.alloc([]const u8, stale_output.items.len);
+    for (stale_output.items, 0..) |entry, idx| {
+        result[idx] = entry;
+    }
+    stale_output.deinit();
+    success = true;
+    return result;
+}
+
+fn findGencountValue(records: []const types.GencountRecord, path: []const u8) ?u64 {
+    for (records) |record| {
+        if (std.mem.eql(u8, record.path, path)) {
+            return record.value;
+        }
+    }
+    return null;
+}
+
+fn isEmptyPath(path: []const u8) bool {
+    return path.len == 0;
+}
+
+fn isSubtreeOf(child: []const u8, parent: []const u8) bool {
+    if (parent.len == 0) return true;
+    if (child.len < parent.len) return false;
+    if (!std.mem.eql(u8, child[0..parent.len], parent)) return false;
+    if (child.len == parent.len) return true;
+    if (child[parent.len] != '/') return false;
+    return true;
+}
+
+fn isDuplicatePath(list: [][]const u8, path: []const u8) bool {
+    for (list) |entry| {
+        if (std.mem.eql(u8, entry, path)) return true;
+    }
+    return false;
 }
 
 fn parseArgs() !CliOptions {
@@ -574,6 +718,12 @@ fn parsePositiveU16(value: []const u8) !u16 {
     const parsed = try std.fmt.parseUnsigned(u16, value, 10);
     if (parsed == 0) return error.BadValue;
     return parsed;
+}
+
+fn normalizeRefreshStatus(raw_status: []const u8) []const u8 {
+    if (std.mem.eql(u8, raw_status, "complete")) return "idle";
+    if (std.mem.eql(u8, raw_status, "done")) return "idle";
+    return raw_status;
 }
 
 fn ensureDir(path: []const u8) !void {

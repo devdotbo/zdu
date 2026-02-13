@@ -109,8 +109,6 @@ pub const ScanProgressState = struct {
         const percent_x10 = self.percent_complete_x10.load(.acquire);
         const remaining = self.estimated_remaining_seconds.load(.acquire);
         const percent: ?f32 = if (percent_x10 < 0) null else @as(f32, @floatFromInt(percent_x10)) / 10.0;
-
-        const _ = now;
         return .{
             .files_scanned = self.files_scanned.load(.acquire),
             .dirs_scanned = self.dirs_scanned.load(.acquire),
@@ -181,24 +179,30 @@ pub const Config = struct {
         var out = config;
 
         if (out.max_cache_bytes < 10 * 1024 * 1024) {
+            std.debug.print("warning: max_cache_bytes {d} below minimum, clamped to {d}\n", .{ out.max_cache_bytes, 10 * 1024 * 1024 });
             out.max_cache_bytes = 10 * 1024 * 1024;
         }
 
         if (out.default_depth == 0) {
+            std.debug.print("warning: default_depth {d} is invalid, clamped to {d}\n", .{ out.default_depth, 1 });
             out.default_depth = 1;
         }
         if (out.default_depth > 255) {
+            std.debug.print("warning: default_depth {d} above 255, clamped to 255\n", .{out.default_depth});
             out.default_depth = 255;
         }
 
         if (out.default_top == 0) {
+            std.debug.print("warning: default_top {d} is invalid, clamped to {d}\n", .{ out.default_top, 1 });
             out.default_top = 1;
         }
         if (out.default_top > 65535) {
+            std.debug.print("warning: default_top {d} above 65535, clamped to 65535\n", .{out.default_top});
             out.default_top = 65535;
         }
 
         if (out.max_log_age_days == 0) {
+            std.debug.print("warning: max_log_age_days {d} is invalid, clamped to {d}\n", .{ out.max_log_age_days, 1 });
             out.max_log_age_days = 1;
         }
 
@@ -215,6 +219,8 @@ pub const Config = struct {
 
     pub fn load(allocator: Allocator) !Config {
         var out = defaults();
+        var saw_cache_dir = false;
+        var saw_log_dir = false;
         const config_path = expandHome(allocator, "~/.zigdu/config") catch return out;
         defer allocator.free(config_path);
 
@@ -237,19 +243,44 @@ pub const Config = struct {
             if (value.len == 0) continue;
 
             if (std.ascii.eqlIgnoreCase(key, "cache_dir")) {
+                saw_cache_dir = true;
                 out.cache_dir = try allocator.dupe(u8, value);
             } else if (std.ascii.eqlIgnoreCase(key, "log_dir")) {
+                saw_log_dir = true;
                 out.log_dir = try allocator.dupe(u8, value);
+            } else if (std.ascii.eqlIgnoreCase(key, "base_dir")) {
+                out.base_dir = try allocator.dupe(u8, value);
             } else if (std.ascii.eqlIgnoreCase(key, "max_cache_bytes")) {
-                out.max_cache_bytes = std.fmt.parseInt(u64, value, 10) catch out.max_cache_bytes;
+                out.max_cache_bytes = std.fmt.parseInt(u64, value, 10) catch blk: {
+                    std.debug.print("warning: invalid max_cache_bytes value: {s}\n", .{value});
+                    break :blk out.max_cache_bytes;
+                };
             } else if (std.ascii.eqlIgnoreCase(key, "default_depth")) {
-                const raw_depth = std.fmt.parseInt(u16, value, 10) catch out.default_depth;
+                const raw_depth = std.fmt.parseInt(u16, value, 10) catch blk: {
+                    std.debug.print("warning: invalid default_depth value: {s}\n", .{value});
+                    break :blk out.default_depth;
+                };
                 out.default_depth = @as(u8, @min(255, raw_depth));
             } else if (std.ascii.eqlIgnoreCase(key, "default_top")) {
-                out.default_top = std.fmt.parseInt(u16, value, 10) catch out.default_top;
+                out.default_top = std.fmt.parseInt(u16, value, 10) catch blk: {
+                    std.debug.print("warning: invalid default_top value: {s}\n", .{value});
+                    break :blk out.default_top;
+                };
             } else if (std.ascii.eqlIgnoreCase(key, "max_log_age_days")) {
-                out.max_log_age_days = std.fmt.parseInt(u16, value, 10) catch out.max_log_age_days;
+                out.max_log_age_days = std.fmt.parseInt(u16, value, 10) catch blk: {
+                    std.debug.print("warning: invalid max_log_age_days value: {s}\n", .{value});
+                    break :blk out.max_log_age_days;
+                };
             }
+        }
+
+        if (!saw_cache_dir) {
+            const cache_tail = try std.fs.path.join(allocator, &.{ out.base_dir, "cache" });
+            out.cache_dir = cache_tail;
+        }
+        if (!saw_log_dir) {
+            const log_tail = try std.fs.path.join(allocator, &.{ out.base_dir, "logs" });
+            out.log_dir = log_tail;
         }
 
         return validate(out);

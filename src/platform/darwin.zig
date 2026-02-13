@@ -1,6 +1,5 @@
 const std = @import("std");
 const types = @import("../types.zig");
-const builtin = @import("builtin");
 
 pub const DirEntry = struct {
     name: []const u8,
@@ -81,10 +80,36 @@ pub fn getVolumeInfo(path: []const u8) !types.VolumeInfo {
 }
 
 pub fn getRecursiveGencount(path: []const u8) !?u64 {
-    _ = path;
     const fs = getVolumeInfo(path) catch return null;
     if (fs.fs_type != .apfs and fs.fs_type != .hfsplus) return null;
-    return null;
+
+    var records = getSubtreeGencounts(std.heap.page_allocator, path, 0) catch return null;
+    defer {
+        for (records) |record| {
+            std.heap.page_allocator.free(record.path);
+        }
+        std.heap.page_allocator.free(records);
+    }
+    if (records.len == 0) return null;
+
+    std.mem.sort(types.GencountRecord, records, {}, struct {
+        fn lessThan(_: void, a: types.GencountRecord, b: types.GencountRecord) bool {
+            return std.mem.lessThan(u8, a.path, b.path);
+        }
+    }.lessThan);
+
+    var digest: u64 = 0xcbf29ce484222325;
+    for (records) |record| {
+        for (record.path) |byte| {
+            digest ^= byte;
+            digest +%= 0x9e3779b97f4a7c15;
+            digest = (digest << 6) +% (digest >> 2);
+        }
+        digest ^= record.value;
+        digest +%= record.value;
+    }
+
+    return digest;
 }
 
 pub fn getSubtreeGencounts(
@@ -92,18 +117,99 @@ pub fn getSubtreeGencounts(
     path: []const u8,
     depth: usize,
 ) !?[]types.GencountRecord {
-    _ = allocator;
-    _ = path;
-    _ = depth;
-    return null;
+    const fs = getVolumeInfo(path) catch return null;
+    if (fs.fs_type != .apfs and fs.fs_type != .hfsplus) return null;
+
+    const StackFrame = struct {
+        abs_path: []const u8,
+        rel_path: []const u8,
+        level: usize,
+    };
+
+    var records = std.ArrayList(types.GencountRecord).init(allocator);
+    var stack = std.ArrayList(StackFrame).init(allocator);
+    defer {
+        for (stack.items) |frame| {
+            allocator.free(frame.abs_path);
+            allocator.free(frame.rel_path);
+        }
+        stack.deinit();
+    }
+
+    const root_abs = try allocator.dupe(u8, path);
+    const root_rel = try allocator.dupe(u8, "");
+    try stack.append(.{
+        .abs_path = root_abs,
+        .rel_path = root_rel,
+        .level = 0,
+    });
+
+    while (stack.items.len > 0) {
+        const frame = stack.pop();
+        const path_token = dirGencountRecord(allocator, frame.abs_path, frame.rel_path) catch {
+            allocator.free(frame.abs_path);
+            allocator.free(frame.rel_path);
+            continue;
+        };
+        try records.append(path_token);
+
+        if (depth != 0 and frame.level >= depth) {
+            allocator.free(frame.abs_path);
+            allocator.free(frame.rel_path);
+            continue;
+        }
+
+        var it = openDirIterator(allocator, frame.abs_path) catch {
+            allocator.free(frame.abs_path);
+            allocator.free(frame.rel_path);
+            continue;
+        };
+        defer it.deinit();
+
+        while (it.next() catch null) |entry| {
+            if (entry.kind != .directory) continue;
+
+            const child_abs = try std.fs.path.join(allocator, &.{ frame.abs_path, entry.name });
+            const child_rel = if (frame.rel_path.len == 0)
+                try allocator.dupe(u8, entry.name)
+            else
+                try std.fs.path.join(allocator, &.{ frame.rel_path, entry.name });
+
+            stack.append(.{
+                .abs_path = child_abs,
+                .rel_path = child_rel,
+                .level = frame.level + 1,
+            }) catch {
+                allocator.free(child_abs);
+                allocator.free(child_rel);
+                return error.OutOfMemory;
+            };
+        }
+
+        allocator.free(frame.abs_path);
+        allocator.free(frame.rel_path);
+    }
+
+    return try records.toOwnedSlice();
 }
 
 const PRIO_DARWIN_PROCESS = 4;
 const PRIO_DARWIN_BG = 0x1000;
 
 pub fn setBackgroundPriority() !void {
-    _ = builtin;
-    const bg = @intCast(c_int, PRIO_DARWIN_BG);
+    const bg: c_int = @intCast(PRIO_DARWIN_BG);
     const rc = std.c.setpriority(PRIO_DARWIN_PROCESS, 0, bg);
     if (rc != 0) return error.Unsupported;
+}
+
+fn dirGencountRecord(
+    allocator: std.mem.Allocator,
+    abs_path: []const u8,
+    rel_path: []const u8,
+) !types.GencountRecord {
+    const st = try std.fs.cwd().statFile(abs_path);
+    return .{
+        .path = try allocator.dupe(u8, rel_path),
+        .value = @as(u64, @bitCast(st.mtime)) ^ st.size,
+    };
 }

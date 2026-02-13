@@ -182,7 +182,7 @@ pub fn formatJson(
     refresh: ?RefreshInfo,
 ) !void {
     const stamp = cache_timestamp orelse result.timestamp;
-    const age_seconds = ageSeconds(result.timestamp, stamp);
+    const age_seconds = ageSeconds(std.time.timestamp(), stamp);
     const cache_iso = try formatTimestampISO(allocator, stamp);
     defer allocator.free(cache_iso);
 

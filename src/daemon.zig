@@ -41,7 +41,7 @@ pub fn spawnBackground(
 ) !u32 {
     _ = _depth;
     _ = _top_n;
-    _ = _verbose;
+    const verbose = _verbose;
     _ = _force;
 
     const pid = try std.posix.fork();
@@ -50,7 +50,7 @@ pub fn spawnBackground(
 
     if (c.setsid() < 0) std.process.exit(1);
 
-    backgroundMain(path, path_hash, config, cross_mount) catch {};
+    backgroundMain(path, path_hash, config, cross_mount, verbose) catch {};
     std.process.exit(0);
 }
 
@@ -74,6 +74,7 @@ fn backgroundMain(
     path_hash: []const u8,
     config: types.Config,
     cross_mount: bool,
+    verbose: bool,
 ) !void {
     const child_pid = std.posix.getpid();
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -96,15 +97,21 @@ fn backgroundMain(
     try redirectOutput(log_file);
     const log = log_file.writer();
 
+    try logLinef(log, "DEBUG", "daemon bootstrap pid={d} path_hash={s} cross_mount={}", .{
+        child_pid,
+        path_hash,
+        cross_mount,
+    });
     platform.setBackgroundPriority() catch {
         try logLine(log, "WARN", "failed to set background priority");
     };
 
     try writePidFile(allocator, pid_path, @intCast(child_pid));
-    try logLine(log, "INFO", "background process started");
+    try logLinef(log, "INFO", "wrote pid file {s}", .{pid_path});
 
     var state = types.ScanProgressState.init(start_time);
     state.state.store(@intFromEnum(types.SessionState.scanning), .release);
+    state.start_time = start_time;
 
     var context = ipc.ServerContext{
         .allocator = allocator,
@@ -115,6 +122,7 @@ fn backgroundMain(
         .start_time = start_time,
         .socket_path = sock_path,
     };
+    try logLinef(log, "DEBUG", "starting ipc socket at {s}", .{sock_path});
 
     const server = try std.Thread.spawn(.{}, ipc.startServer, .{&context});
     defer {
@@ -123,28 +131,42 @@ fn backgroundMain(
         server.join();
         cleanupStale(allocator, path_hash, config) catch {};
         logLine(log, "INFO", "background process finished") catch {};
-    };
+    }
+
+    try logLine(log, "INFO", "background process started");
 
     const summary = scanner.scanWithProgress(allocator, path, cross_mount, .{
         .progress = &state,
         .cross_mount = cross_mount,
+        .verbose = verbose,
     }) catch |err| {
         if (err == error.Canceled) {
             state.state.store(@intFromEnum(types.SessionState.err), .release);
-            try logLine(log, "INFO", "scan canceled");
+            try logLine(log, "WARN", "scan canceled");
         } else {
             state.state.store(@intFromEnum(types.SessionState.err), .release);
-            try logLine(log, "ERROR", "scan failed");
+            try logLinef(log, "ERROR", "scan failed: {s}", .{@errorName(err)});
         }
         state.complete.store(true, .release);
         return;
     };
 
     state.state.store(@intFromEnum(types.SessionState.completing), .release);
-    cache.writeCache(allocator, path_hash, &summary.result, config) catch {
+    try logLinef(
+        log,
+        "DEBUG",
+        "scan finished duration_ms={d} entries={d} warnings={s}",
+        .{
+            summary.result.duration_ms,
+            summary.result.entry_count,
+            if (summary.had_warnings) "true" else "false",
+        },
+    );
+
+    cache.writeCache(allocator, path_hash, &summary.result, config) catch |err| {
         state.state.store(@intFromEnum(types.SessionState.err), .release);
         state.complete.store(true, .release);
-        try logLine(log, "ERROR", "cache write failed");
+        try logLinef(log, "ERROR", "cache write failed: {s}", .{@errorName(err)});
         return;
     };
 
@@ -159,6 +181,8 @@ fn backgroundMain(
         cache.writeGencounts(allocator, path_hash, cached_records, config) catch {
             try logLine(log, "WARN", "gencount write failed");
         };
+    } else {
+        try logLine(log, "DEBUG", "no gencount records captured");
     }
 
     state.state.store(@intFromEnum(types.SessionState.done), .release);
@@ -206,4 +230,10 @@ fn logLine(writer: anytype, level: []const u8, message: []const u8) !void {
     const stamp = try output.formatTimestampISO(std.heap.page_allocator, std.time.timestamp());
     defer std.heap.page_allocator.free(stamp);
     try writer.print("{s} [{s}] {s}\n", .{ stamp, level, message });
+}
+
+fn logLinef(writer: anytype, level: []const u8, comptime format: []const u8, args: anytype) !void {
+    const message = try std.fmt.allocPrint(std.heap.page_allocator, format, args);
+    defer std.heap.page_allocator.free(message);
+    try logLine(writer, level, message);
 }

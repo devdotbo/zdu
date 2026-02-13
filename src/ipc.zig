@@ -42,12 +42,12 @@ pub const ServerContext = struct {
 };
 
 const UnknownCommandPayload = struct {
-    error: []const u8,
+    @"error": []const u8,
     command: []const u8,
 };
 
 const ResultUnavailablePayload = struct {
-    error: []const u8,
+    @"error": []const u8,
     partial_result: ?[]const u8,
 };
 
