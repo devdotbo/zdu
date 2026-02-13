@@ -83,7 +83,7 @@ pub fn getRecursiveGencount(path: []const u8) !?u64 {
     const fs = getVolumeInfo(path) catch return null;
     if (fs.fs_type != .apfs and fs.fs_type != .hfsplus) return null;
 
-    var records = getSubtreeGencounts(std.heap.page_allocator, path, 0) catch return null;
+    const records = getSubtreeGencounts(std.heap.page_allocator, path, 0) catch return null;
     defer {
         for (records) |record| {
             std.heap.page_allocator.free(record.path);

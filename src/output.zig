@@ -293,7 +293,7 @@ fn collectVisibleEntries(
 ) ![]OutputEntry {
     if (depth_limit == 0) return try allocator.alloc(OutputEntry, 0);
     const depth_buckets = @as(usize, depth_limit);
-    var buckets = try allocator.alloc(std.ArrayList(OutputEntry), depth_buckets);
+    const buckets = try allocator.alloc(std.ArrayList(OutputEntry), depth_buckets);
     for (buckets) |*bucket| bucket.* = std.ArrayList(OutputEntry).init(allocator);
     defer {
         for (buckets) |*bucket| bucket.deinit();

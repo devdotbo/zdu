@@ -68,11 +68,11 @@ pub fn scanWithProgress(
         progress.percent_complete_x10.store(-1, .release);
     }
 
-    var active = if (options.progress) |p| p else null;
+    const active = if (options.progress) |p| p else null;
     const volume_info = try platform.getVolumeInfo(path);
     const root_device_id: ?u64 = null;
 
-    var root_iter = try platform.openDirIterator(allocator, path);
+    const root_iter = try platform.openDirIterator(allocator, path);
     const root_node = try createNode(allocator, "", 0);
 
     var stack = std.ArrayList(StackFrame).init(allocator);

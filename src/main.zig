@@ -224,7 +224,7 @@ fn runSessionCommands(options: *const CliOptions, allocator: Allocator, config: 
     const stderr = std.io.getStdErr().writer();
 
     if (options.sessions) {
-        var sessions = try ipc.queryAllSessions(allocator, config);
+        const sessions = try ipc.queryAllSessions(allocator, config);
         if (sessions.len == 0) {
             if (options.json) {
                 try output.formatSessionsJson(allocator, stdout, &[_]output.StatusJson{});

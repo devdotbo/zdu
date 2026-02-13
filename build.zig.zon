@@ -1,5 +1,6 @@
 .{
-    .name = "zigdu",
+    .fingerprint = 0x5f08414f76081462,
+    .name = .zigdu,
     .version = "0.1.0",
     .minimum_zig_version = "0.15.2",
     .paths = .{"src"},

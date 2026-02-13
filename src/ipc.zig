@@ -116,7 +116,7 @@ pub fn startServer(context: *ServerContext) !void {
         }
 
         try sendJson(client, UnknownCommandPayload{
-            .error = "unknown command",
+            .@"error" = "unknown command",
             .command = command,
         });
     }
@@ -268,7 +268,7 @@ fn buildResultResponse(context: *ServerContext) ![]u8 {
 
     if (context.state.state.load(.acquire) == @intFromEnum(types.SessionState.err)) {
         const payload = ResultUnavailablePayload{
-            .error = "scan failed",
+            .@"error" = "scan failed",
             .partial_result = null,
         };
         var out = std.ArrayList(u8).init(context.allocator);
@@ -285,7 +285,7 @@ fn buildResultResponse(context: *ServerContext) ![]u8 {
         context.config,
     ) catch {
         const payload = ResultUnavailablePayload{
-            .error = "cache read failed",
+            .@"error" = "cache read failed",
             .partial_result = null,
         };
         var out = std.ArrayList(u8).init(context.allocator);

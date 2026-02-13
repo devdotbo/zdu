@@ -105,7 +105,7 @@ pub const ScanProgressState = struct {
         return .{ .start_time = start_time };
     }
 
-    pub fn snapshot(self: *const ScanProgressState, now: i64) ScanProgress {
+    pub fn snapshot(self: *const ScanProgressState, _now: i64) ScanProgress {
         const percent_x10 = self.percent_complete_x10.load(.acquire);
         const remaining = self.estimated_remaining_seconds.load(.acquire);
         const percent: ?f32 = if (percent_x10 < 0) null else @as(f32, @floatFromInt(percent_x10)) / 10.0;
